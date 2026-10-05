@@ -241,6 +241,7 @@ bootEl.addEventListener('click', () => {
 "type 'help' to see commands · 'theme' to change the look · 'learn' to level up",
     'dim');
   input.focus();
+  setTimeout(checkUpdate, 1500);
 }, { once: false });
 
 /* ---------------- CRT toggle ---------------- */
@@ -260,8 +261,8 @@ defineCommand({
       'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt', 'install'],
       'you': ['stackz', 'games', 'desk', 'note', 'notes', 'todo', 'todos', 'done', 'ideas', 'idea', 'weather', 'pomodoro', 'slate'],
       'web': ['browse', 'html', 'cpp'],
-      'studio': ['studio', 'newgame', 'edit', 'run'],
-      'arcade': ['dungeon', 'play', 'halo', 'fortune'],
+      'studio': ['studio', 'newgame', 'edit', 'run', 'ship', 'showcase', 'export', 'import'],
+      'arcade': ['dungeon', 'play', 'doom', 'halo', 'fortune'],
       'fun': ['sudo', 'whoami', 'date', 'echo'],
     };
     ctx.print('<b>BANDZ SHELL</b> <span class="dim">— commands:</span>');
@@ -871,12 +872,24 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
+const BUILD = 6; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js')
+      .then((r) => { try { r.update(); } catch (e) {} }) // force the update check every load
+      .catch(() => {});
   });
+}
+// stale-build banner: cache-busted fetch slips past the old worker's cache
+function checkUpdate() {
+  fetch('version.json?t=' + Date.now()).then((r) => r.json()).then((v) => {
+    if (v && v.build > BUILD) {
+      print('<b>⟳ UPDATE AVAILABLE</b> <span class="dim">— you\'re on an old build. Close this tab completely (tab switcher → ✕), force-close Safari, reopen the link.</span>', 'accent');
+      blip(440, 0.12);
+    }
+  }).catch(() => {});
 }
 
 /* ---------------- status bar: clock + paper P&L ticker ---------------- */
