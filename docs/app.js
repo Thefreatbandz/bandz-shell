@@ -1278,4 +1278,128 @@ if (typeof module !== 'undefined' && module.exports) {
     levenshtein: levenshtein, closestCmd: closestCmd, cmdNames: cmdNames, ARG_HINTS: ARG_HINTS };
 }
 
+/* ================= SHIP + BACKUP — portfolio & safety ================= */
+function downloadFile(name, content, type) {
+  try {
+    const blob = new Blob([content], { type: type || 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch (e) {} a.remove(); }, 5000);
+    return true;
+  } catch (e) { return false; }
+}
+async function shareFile(name, content, type, title) {
+  try {
+    const file = new File([content], name, { type: type || 'text/plain' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: title || name });
+      return true;
+    }
+  } catch (e) { /* user cancelled or unsupported */ }
+  return false;
+}
+defineCommand({
+  name: 'ship',
+  help: 'ship <game> — package your game to share',
+  explain: 'Bundles your game into one file you can text to people. Send the file to bands and it goes live on your public portfolio link.',
+  run(args, ctx) {
+    const name = (args[0] || '').toLowerCase();
+    const g = name && gameGet(name);
+    if (!g) {
+      const mine = myGames();
+      ctx.print('ship what?' + (mine.length ? '<br><span class="dim">your games: ' + mine.map(esc).join(' · ') + '</span>' : '<br><span class="dim">no games yet — `newgame doomlike` first</span>'));
+      return;
+    }
+    const fname = 'bandz-' + name + '.html';
+    ctx.print('packaging <b>' + esc(name) + '</b>…');
+    shareFile(fname, g.code, 'text/html', name).then((shared) => {
+      if (!shared) {
+        if (!downloadFile(fname, g.code, 'text/html')) { ctx.print('couldn\'t make the file on this browser.', 'dim'); return; }
+      }
+      ctx.print((shared ? 'share sheet opened ✓' : 'downloaded <b>' + esc(fname) + '</b> ✓') +
+        '<br><span class="dim">send that file to bands in chat and I\'ll put it live at</span><br>' +
+        '<b>thefreatbandz.github.io/bandz-shell/showcase/' + esc(name) + '/</b>');
+      blip(990, 0.1);
+    });
+  }
+});
+defineCommand({
+  name: 'showcase',
+  help: 'showcase — your public portfolio',
+  explain: 'The games you\'ve shipped to a public link. This is the portfolio.',
+  run(args, ctx) {
+    fetch('showcase/index.json?t=' + Date.now()).then((r) => r.json()).then((idx) => {
+      const gs = (idx && idx.games) || [];
+      if (!gs.length) {
+        ctx.print('<b>SHOWCASE</b> <span class="dim">— nothing shipped yet</span><br><span class="dim">`ship &lt;game&gt;` puts your game here, on a link you can send anyone.</span>');
+        return;
+      }
+      ctx.print('<b>SHOWCASE</b> <span class="dim">— your public portfolio</span><br>' +
+        gs.map((g) => '▸ <b>' + esc(g.name) + '</b> <span class="dim">— thefreatbandz.github.io/bandz-shell/showcase/' + esc(g.path) + '/</span>').join('<br>'));
+    }).catch(() => ctx.print('couldn\'t reach the showcase. check your signal.', 'dim'));
+  }
+});
+defineCommand({
+  name: 'export',
+  help: 'export [games|desk|all] — back up your stuff',
+  explain: 'Your games and notes live in the phone\'s browser storage, which iOS can wipe. Export keeps a copy in your Files.',
+  run(args, ctx) {
+    const what = (args[0] || 'all').toLowerCase();
+    const data = { app: 'bandz-shell', v: 1, exported: new Date().toISOString(), games: {}, desk: null };
+    if (what === 'games' || what === 'all') {
+      myGames().forEach((n) => { const g = gameGet(n); if (g) data.games[n] = g.code; });
+    }
+    if (what === 'desk' || what === 'all') {
+      data.desk = { notes: listGet('bs_notes'), todos: listGet('bs_todos'), ideas: listGet('bs_ideas') };
+    }
+    const n = Object.keys(data.games).length;
+    const fname = 'bandz-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    if (!downloadFile(fname, JSON.stringify(data), 'application/json')) { ctx.print('couldn\'t make the file on this browser.', 'dim'); return; }
+    ctx.print('backed up <b>' + esc(fname) + '</b> <span class="dim">(' + n + ' game' + (n === 1 ? '' : 's') + (data.desk ? ' + desk' : '') + ')</span><br><span class="dim">keep it in Files or iCloud. `import` restores it.</span>');
+    blip(990, 0.1);
+  }
+});
+defineCommand({
+  name: 'import',
+  help: 'import — restore from a backup file',
+  explain: 'Reads a bandz backup file and puts your games and desk stuff back.',
+  run(args, ctx) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.json,application/json';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      inp.remove();
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const data = JSON.parse(r.result);
+          if (!data || data.app !== 'bandz-shell') throw new Error('not a bandz backup');
+          let ng = 0;
+          Object.keys(data.games || {}).forEach((n) => {
+            const key = String(n).toLowerCase().replace(/[^a-z0-9-]/g, '');
+            if (key && typeof data.games[n] === 'string') { gameSave(key, data.games[n]); ng++; }
+          });
+          let nd = 0;
+          if (data.desk) {
+            ['notes', 'todos', 'ideas'].forEach((k) => {
+              if (Array.isArray(data.desk[k])) { storeSet('bs_' + k, JSON.stringify(data.desk[k])); nd += data.desk[k].length; }
+            });
+          }
+          ctx.print('restored <b>' + ng + '</b> game' + (ng === 1 ? '' : 's') + (nd ? ' + ' + nd + ' desk items' : '') + ' <span class="dim">from ' + esc(f.name) + '</span>');
+          blip(990, 0.1);
+        } catch (e) { ctx.print('couldn\'t read that file. <span class="dim">is it a bandz backup?</span>'); }
+      };
+      r.readAsText(f);
+    };
+    inp.click();
+  }
+});
+
 })();
