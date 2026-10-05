@@ -177,16 +177,16 @@ function histNav(d) {
 /* ---------------- key bar ---------------- */
 const keybar = $('keybar');
 const KEYS = [
-  { label: 'Tab', act: () => complete() },
-  { label: '↑', act: () => histNav(1) },
-  { label: '↓', act: () => histNav(-1) },
+  { label: 'Tab', act: () => { if (sugVisible()) sugAccept(0); else complete(); } },
+  { label: '↑', act: () => { if (sugVisible()) sugMove(-1); else histNav(1); } },
+  { label: '↓', act: () => { if (sugVisible()) sugMove(1); else histNav(-1); } },
   { label: '←', act: () => moveCursor(-1) },
   { label: '→', act: () => moveCursor(1) },
   { label: '|', act: () => insert('|') },
   { label: '/', act: () => insert('/') },
   { label: '~', act: () => insert('~') },
   { label: '-', act: () => insert('-') },
-  { label: 'Esc', act: () => { input.value = ''; try { sugHide(); } catch (e) {} input.focus(); } },
+  { label: 'Esc', act: () => { input.value = ''; try { sugHide(); } catch (e) {} } },
 ];
 function insert(ch) {
   const p = input.selectionStart == null ? input.value.length : input.selectionStart;
@@ -209,7 +209,12 @@ KEYS.forEach((k) => {
   const b = document.createElement('button');
   b.className = 'key';
   b.textContent = k.label;
-  b.addEventListener('click', (e) => { e.preventDefault(); k.act(); });
+  let touched = false;
+  // iOS: preventDefault on touchstart keeps the input focused so the
+  // keyboard never bounces — a bounce is what can swallow the next
+  // keystroke typed right after tapping a key.
+  b.addEventListener('touchstart', (e) => { e.preventDefault(); touched = true; setTimeout(() => { touched = false; }, 600); k.act(); input.focus(); }, { passive: false });
+  b.addEventListener('click', (e) => { if (touched) { touched = false; return; } e.preventDefault(); k.act(); input.focus(); });
   keybar.appendChild(b);
 });
 
@@ -601,6 +606,12 @@ defineCommand({
       '<span class="dim">meanwhile: `dungeon` is ours and already here.</span>');
   }
 });
+defineCommand({
+  name: 'doom',
+  help: 'doom — launch DOOM',
+  explain: 'Shortcut for `play doom`. Freedoom-powered, touch controls on your phone.',
+  run(args, ctx) { Commands.play.run(['doom'], ctx); }
+});
 
 /* ---- weather / pomodoro / slate ---- */
 defineCommand({
@@ -694,7 +705,7 @@ function newDungeon(seed) {
     }
     return null;
   };
-  const goblins = [], gold = [];
+  const goblins = [], goldSpots = [];
   for (let i = 1; i < rooms.length; i++) {
     const r = rooms[i];
     const n = 1 + Math.floor(rnd() * 2);
@@ -702,9 +713,9 @@ function newDungeon(seed) {
       const s = freeSpot(r);
       if (s) goblins.push({ x: s.x, y: s.y, hp: 6 });
     }
-    if (rnd() < 0.8) { const s = freeSpot(r); if (s) gold.push(s); }
+    if (rnd() < 0.8) { const s = freeSpot(r); if (s) goldSpots.push(s); }
   }
-  return { W, H, grid, px, py, hp: 20, maxhp: 20, floor: 1, gold: 0, score: 0, goblins, seed, rnd };
+  return { W, H, grid, px, py, hp: 20, maxhp: 20, floor: 1, gold: 0, goldSpots, score: 0, goblins, seed, rnd };
 }
 function dungeonRender() {
   const d = S.dungeon;
@@ -716,7 +727,7 @@ function dungeonRender() {
       else {
         const g = d.goblins.find((o) => o.x === x && o.y === y);
         if (g) row += 'g';
-        else if (d.gold.find((o) => o.x === x && o.y === y)) row += '*';
+        else if (d.goldSpots.find((o) => o.x === x && o.y === y)) row += '*';
         else row += d.grid[y][x];
       }
     }
@@ -746,8 +757,8 @@ function dungeonMove(dx, dy) {
     else dungeonMsg('you hit the goblin (' + dmg + ')');
   } else {
     d.px = nx; d.py = ny;
-    const au = d.gold.findIndex((o) => o.x === nx && o.y === ny);
-    if (au !== -1) { d.gold.splice(au, 1); d.gold++; d.score += 10; blip(1200, 0.05); }
+    const au = d.goldSpots.findIndex((o) => o.x === nx && o.y === ny);
+    if (au !== -1) { d.goldSpots.splice(au, 1); d.gold++; d.score += 10; blip(1200, 0.05); }
     if (d.grid[ny][nx] === '>') {
       const nd = newDungeon(d.seed + d.floor * 7919);
       nd.floor = d.floor + 1; nd.hp = Math.min(d.maxhp, d.hp + 5); nd.maxhp = d.maxhp;
@@ -1027,15 +1038,39 @@ function myGames() {
   return out.sort();
 }
 let editingGame = null;
+let edLive = true, edTimer = null;
+function edRenderPreview() {
+  if (!edLive || !editingGame) return;
+  try {
+    const f = $('edpreview');
+    f.removeAttribute('src');
+    f.srcdoc = $('edcode').value;
+  } catch (e) {}
+}
 function editorOpen(name, code) {
   editingGame = name;
   $('edtitle').textContent = 'edit · ' + name;
   $('edcode').value = code;
   $('edmsg').textContent = 'edit the code · save keeps it on your phone · run plays it';
+  $('edlive').classList.toggle('on', edLive);
+  $('edpreview').classList.toggle('on', edLive);
   $('editor').classList.add('open');
+  edRenderPreview();
 }
-function editorClose() { $('editor').classList.remove('open'); editingGame = null; input.focus(); }
+function editorClose() { $('editor').classList.remove('open'); editingGame = null; try { const f = $('edpreview'); f.removeAttribute('srcdoc'); f.removeAttribute('src'); } catch (e) {} input.focus(); }
 $('edclose').addEventListener('click', editorClose);
+$('edlive').addEventListener('click', () => {
+  edLive = !edLive;
+  $('edlive').classList.toggle('on', edLive);
+  $('edpreview').classList.toggle('on', edLive);
+  if (edLive) { $('edmsg').textContent = 'live preview on — it rebuilds as you type'; edRenderPreview(); }
+  else { const f = $('edpreview'); f.removeAttribute('srcdoc'); f.removeAttribute('src'); $('edmsg').textContent = 'live preview off'; }
+  blip(edLive ? 990 : 520, 0.06);
+});
+$('edcode').addEventListener('input', () => {
+  clearTimeout(edTimer);
+  edTimer = setTimeout(edRenderPreview, 900); // rebuild ~1s after he stops typing
+});
 $('edsave').addEventListener('click', () => {
   if (!editingGame) return;
   gameSave(editingGame, $('edcode').value);

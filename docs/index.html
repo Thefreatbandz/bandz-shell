@@ -76,7 +76,11 @@ a { color:var(--accent); }
 #edbar .grp { display:flex; gap:8px; }
 #edbar button { background:transparent; color:var(--fg); border:1px solid var(--dim); border-radius:8px; padding:8px 12px; font:inherit; font-size:13px; }
 #edbar button.go { background:var(--fg); color:var(--bg); font-weight:bold; border-color:var(--fg); }
-#edcode { flex:1; background:#000; color:var(--fg); border:none; outline:none; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; padding:12px; resize:none; white-space:pre; }
+#edbar button.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+#edmain { flex:1; display:flex; flex-direction:column; min-height:0; }
+#edcode { flex:1; background:#000; color:var(--fg); border:none; outline:none; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; padding:12px; resize:none; white-space:pre; min-height:0; }
+#edpreview { flex:1; border:none; border-top:1px solid var(--dim); width:100%; background:#000; min-height:0; display:none; }
+#edpreview.on { display:block; }
 #edmsg { padding:6px 14px; font-size:12px; color:var(--dim); border-top:1px solid var(--dim); }
 /* CRT */
 #crtfx { display:none; position:fixed; inset:0; pointer-events:none; z-index:50;
@@ -142,8 +146,11 @@ body.crt #out, body.crt #dungeonview { text-shadow:0 0 6px var(--fg); }
   <iframe id="browserframe" title="browser" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
 </div>
 <div id="editor">
-  <div id="edbar"><span id="edtitle">edit</span><span class="grp"><button id="edsave">save</button><button id="edrun" class="go">▶ run</button><button id="edclose">✕</button></span></div>
-  <textarea id="edcode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div id="edbar"><span id="edtitle">edit</span><span class="grp"><button id="edlive" class="on">live</button><button id="edsave">save</button><button id="edrun" class="go">▶ run</button><button id="edclose">✕</button></span></div>
+  <div id="edmain">
+    <textarea id="edcode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    <iframe id="edpreview" title="live preview" sandbox="allow-scripts"></iframe>
+  </div>
   <div id="edmsg">edit the code · save keeps it on your phone · run plays it</div>
 </div>
 <script src="app.js"></script>
