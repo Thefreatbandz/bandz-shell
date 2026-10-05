@@ -557,19 +557,37 @@ defineCommand({
   }
 });
 
-/* ---- arcade (phase 5 stub — honest) ---- */
+/* ---- arcade (DOOM live, more loading) ---- */
+function arcadeOpen(title, url) {
+  $('arcadetitle').textContent = '▸ ' + title;
+  $('arcadeframe').src = url;
+  $('arcade').classList.add('open');
+  blip(520, 0.08);
+}
+function arcadeClose() {
+  $('arcade').classList.remove('open');
+  $('arcadeframe').src = 'about:blank';
+  input.focus();
+}
+$('arcadeclose').addEventListener('click', arcadeClose);
 defineCommand({
   name: 'play',
-  help: 'play — the arcade (coming in phase 5)',
-  explain: 'The game arcade. DOOM lands first, then Quake, fighters, racing, roguelikes.',
+  help: 'play [game] — the arcade',
+  explain: 'The game arcade, inside your terminal. `play` lists games, `play doom` launches DOOM.',
   run(args, ctx) {
-    ctx.print('<b>ARCADE</b> <span class="dim">— phase 5. loading order:</span><br>' +
-      '1. DOOM <span class="dim">(Freedoom — free & legal)</span><br>' +
-      '2. Quake · Return to Castle Wolfenstein<br>' +
-      '3. Fighters <span class="dim">(MK, SF2, KOF — emulator + your ROMs)</span><br>' +
-      '4. SuperTuxKart <span class="dim">(free, open source)</span><br>' +
-      '5. Roguelikes <span class="dim">(Shattered PD, DCSS…)</span><br>' +
-      '<span class="dim">meanwhile: type `dungeon` — our own game is already here.</span>');
+    const g = (args[0] || '').toLowerCase();
+    if (g === 'doom') {
+      ctx.print('launching <b>DOOM</b>… <span class="dim">freedoom · touch controls on phone</span>');
+      arcadeOpen('DOOM', 'arcade/doom/');
+      return;
+    }
+    if (g) { ctx.print('"' + esc(g) + '" isn\'t in the arcade yet. <span class="dim">try: play doom</span>'); return; }
+    ctx.print('<b>ARCADE</b><br>' +
+      '▸ <b>doom</b> <span class="dim">— playable now · `play doom`</span><br>' +
+      '· quake <span class="dim">— wiring up</span><br>' +
+      '· fighters <span class="dim">— emulator + your ROMs</span><br>' +
+      '· supertuxkart <span class="dim">— on deck</span><br>' +
+      '<span class="dim">meanwhile: `dungeon` is ours and already here.</span>');
   }
 });
 

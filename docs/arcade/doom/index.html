@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>DOOM · Bandz Arcade</title>
+<style>
+:root { --bg:#0d0d0f; --fg:#e8c15a; --dim:#8a743f; }
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; background:var(--bg); color:var(--fg);
+  font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+#wrap { display:flex; flex-direction:column; height:100dvh; }
+header { display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-bottom:1px solid var(--dim); font-size:14px; }
+header a { color:var(--fg); text-decoration:none; border:1px solid var(--dim);
+  border-radius:8px; padding:6px 12px; }
+#stage { flex:1; display:flex; align-items:center; justify-content:center; position:relative; }
+#loader { text-align:center; color:var(--dim); font-size:14px; line-height:2; }
+#loader .spin { font-size:28px; animation:spin 1s linear infinite; display:inline-block; }
+@keyframes spin { to { transform:rotate(360deg); } }
+canvas { display:none; background:#000; outline:none;
+  width:min(100vw, calc(100dvh * 4 / 3)); height:min(calc(100vw * 0.75), 100dvh); }
+canvas.on { display:block; }
+#hint { padding:8px; text-align:center; font-size:12px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header><span>▸ DOOM <span style="color:var(--dim)">· bandz arcade · freedoom</span></span><a href="javascript:history.back()">✕ close</a></header>
+  <div id="stage">
+    <div id="loader"><span class="spin">◌</span><br><span id="loadmsg">summoning demons…</span></div>
+    <canvas id="canvas" tabindex="0"></canvas>
+  </div>
+  <div id="hint">desktop: WASD + mouse · phone: touch controls · tap canvas to focus</div>
+</div>
+<script>
+var loadmsg = document.getElementById('loadmsg');
+function setStatus(t) { if (t) loadmsg.textContent = t.replace(/<[^>]*>/g, ''); }
+// 1. fetch the WAD first (bundled, free, legal — nobody can take it from us)
+fetch('freedoom1.wad').then(function (r) {
+  if (!r.ok) throw new Error('wad fetch failed');
+  setStatus('loading freedoom…');
+  return r.arrayBuffer();
+}).then(function (buf) {
+  window.wadData = new Uint8Array(buf);
+  boot();
+}).catch(function (e) {
+  setStatus('failed to load game data: ' + e.message);
+});
+function boot() {
+  setStatus('starting engine…');
+  window.Module = {
+    arguments: ['-iwad', 'freedoom1.wad'],
+    canvas: document.getElementById('canvas'),
+    setStatus: setStatus,
+    onRuntimeInitialized: function () {
+      // write the WAD into the engine's filesystem
+      var data = window.wadData;
+      var f = FS.open('/freedoom1.wad', 'w');
+      FS.write(f, data, 0, data.length, 0);
+      FS.close(f);
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('canvas').classList.add('on');
+      document.getElementById('canvas').focus();
+    }
+  };
+  // 2. touch controls (on-screen gamepad)
+  var oly = document.createElement('script');
+  oly.src = 'oly.js';
+  oly.onload = function () {
+    try {
+      olySetup({
+        'Escape': { lbl: '≡' }, 'Enter': { lbl: '⏎', pos: [15, 0] },
+        'KeyW': { lbl: 'W', anc: 'B', pos: [10, 20], shape: 'U' },
+        'KeyS': { lbl: 'S', anc: 'B', pos: [10, 0], shape: 'D' },
+        'KeyA': { lbl: 'A', anc: 'B', pos: [0, 10], shape: 'L' },
+        'KeyD': { lbl: 'D', anc: 'B', pos: [20, 10], shape: 'R' },
+        'ControlLeft': { lbl: '✸', anc: 'RB', pos: [0, 10] },
+        'Space': { lbl: '○', anc: 'RB', pos: [20, 10] },
+        'Tab': { lbl: '⇥', anc: 'R', pos: [30, 0] }
+      }, 3);
+      if (typeof olyOn === 'function') olyOn();
+    } catch (e) { console.info('touch controls skipped', e); }
+    bootWasm();
+  };
+  oly.onerror = bootWasm;
+  document.body.appendChild(oly);
+}
+function bootWasm() {
+  var s = document.createElement('script');
+  s.src = 'index.js';
+  document.body.appendChild(s);
+}
+document.getElementById('canvas').addEventListener('click', function () { this.focus(); });
+</script>
+</body>
+</html>
