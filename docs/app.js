@@ -108,6 +108,7 @@ function parseArgs(line) {
 function submit() {
   const raw = input.value;
   input.value = '';
+  sugHide();
   S.histIdx = -1;
   runLine(raw);
 }
@@ -128,7 +129,10 @@ function runLine(raw) {
   if (S.history.length > 100) S.history.pop();
   if (!def) {
     S.lastError = { cmd: name, msg: 'command not found' };
-    print("command not found: " + esc(name) + " — try <b>help</b>, or <b>why</b> to understand.", 'dim');
+    const guess = closestCmd(name);
+    print('command not found: ' + esc(name) + (guess
+      ? ' — did you mean <b>' + esc(guess) + '</b>?'
+      : ' — try <b>help</b>') + ' <span class="dim">(or `why`)</span>');
     return;
   }
   try {
@@ -141,10 +145,15 @@ function runLine(raw) {
 }
 input.addEventListener('keydown', (e) => {
   if (S.dungeon) return; // dungeon captures keys globally
-  if (e.key === 'Enter') { e.preventDefault(); submit(); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); histNav(1); }
-  else if (e.key === 'ArrowDown') { e.preventDefault(); histNav(-1); }
-  else if (e.key === 'Tab') { e.preventDefault(); complete(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (sugVisible() && sugIdx >= 0) sugAccept();
+    else submit();
+  }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (sugVisible()) sugMove(-1); else histNav(1); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (sugVisible()) sugMove(1); else histNav(-1); }
+  else if (e.key === 'Tab') { e.preventDefault(); if (!sugAccept(0)) complete(); }
+  else if (e.key === 'Escape') { sugHide(); input.value = ''; input.focus(); }
   else if (e.key === 'l' && e.ctrlKey) { e.preventDefault(); Commands.clear.run([]); }
 });
 function histNav(d) {
@@ -177,7 +186,7 @@ const KEYS = [
   { label: '/', act: () => insert('/') },
   { label: '~', act: () => insert('~') },
   { label: '-', act: () => insert('-') },
-  { label: 'Esc', act: () => { input.value = ''; input.focus(); } },
+  { label: 'Esc', act: () => { input.value = ''; try { sugHide(); } catch (e) {} input.focus(); } },
 ];
 function insert(ch) {
   const p = input.selectionStart == null ? input.value.length : input.selectionStart;
@@ -850,13 +859,6 @@ if ('serviceWorker' in navigator) {
   }).catch(() => {});
 })();
 
-/* test hook (node only, harmless in browser) */
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { newDungeon: newDungeon, mulberry32: mulberry32, seedFrom: seedFrom, sparkline: sparkline, bar: bar, parseArgs: parseArgs, MISSIONS: MISSIONS };
-}
-
-})();
-
 /* ================= PHONE INSTALL ================= */
 defineCommand({
   name: 'install',
@@ -1116,3 +1118,106 @@ defineCommand({
     runGameSrc(g.code, name);
   }
 });
+
+/* ================= SUGGESTIONS — it guesses what you'll say ================= */
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = [], cur = [];
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    const t = prev; prev = cur; cur = t;
+  }
+  return prev[n];
+}
+function cmdNames() {
+  return Object.keys(Commands).filter((n) => Commands[n].name === n).sort();
+}
+function closestCmd(name) {
+  let best = null, bd = 3;
+  cmdNames().forEach((n) => {
+    const d = levenshtein(name, n);
+    if (d < bd) { bd = d; best = n; }
+  });
+  return best;
+}
+const ARG_HINTS = {
+  theme: () => Object.keys(THEMES),
+  play: () => ['doom'],
+  dungeon: () => ['daily'],
+  explain: () => cmdNames(),
+  newgame: () => ['doomlike'],
+  edit: () => myGames(),
+  run: () => myGames(),
+};
+let sugList = [], sugIdx = -1;
+function sugVisible() { return $('suggest').style.display === 'block' && sugList.length > 0; }
+function updateSuggest() {
+  const box = $('suggest');
+  sugList = []; sugIdx = -1;
+  if (S.dungeon) { box.style.display = 'none'; return; }
+  const v = input.value;
+  if (!v) { box.style.display = 'none'; return; }
+  const m = v.match(/^(\S+)\s+(.*)$/);
+  if (m) {
+    // completing an argument: "theme m" -> "theme matrix"
+    const cmd = m[1].toLowerCase(), frag = m[2].toLowerCase();
+    const hints = (ARG_HINTS[cmd] || (() => []))();
+    sugList = hints.filter((h) => h.toLowerCase().indexOf(frag) === 0)
+      .map((h) => ({ t: m[1] + ' ' + h, d: '' }));
+  } else {
+    // completing the command itself
+    const frag = v.toLowerCase();
+    const cmds = cmdNames().filter((n) => n.indexOf(frag) === 0)
+      .map((n) => ({ t: n, d: Commands[n].help }));
+    const als = Object.keys(Commands)
+      .filter((n) => Commands[n].name !== n && n.indexOf(frag) === 0)
+      .map((n) => ({ t: n, d: 'alias → ' + Commands[n].name }));
+    const seen = {};
+    cmds.concat(als).forEach((s) => { seen[s.t] = 1; });
+    const hist = [];
+    for (let i = 0; i < S.history.length && hist.length < 3; i++) {
+      const h = S.history[i];
+      if (h.toLowerCase().indexOf(frag) === 0 && !seen[h]) { seen[h] = 1; hist.push({ t: h, d: 'history' }); }
+    }
+    sugList = cmds.concat(als, hist).slice(0, 6);
+  }
+  if (!sugList.length) { box.style.display = 'none'; return; }
+  box.innerHTML = sugList.map((s, i) =>
+    '<div class="sug" data-i="' + i + '"><b>' + esc(s.t) + '</b>' +
+    (s.d ? ' <span class="dim">· ' + esc(s.d) + '</span>' : '') + '</div>').join('');
+  box.style.display = 'block';
+}
+function sugMove(d) {
+  if (!sugList.length) return;
+  sugIdx = (sugIdx + d + sugList.length) % sugList.length;
+  const els = $('suggest').querySelectorAll('.sug');
+  els.forEach((el, i) => el.classList.toggle('on', i === sugIdx));
+}
+function sugAccept(i) {
+  const s = sugList[i == null ? sugIdx : i];
+  if (!s) return false;
+  input.value = s.t + (s.t.indexOf(' ') === -1 ? ' ' : '');
+  $('suggest').style.display = 'none';
+  sugList = []; sugIdx = -1;
+  input.focus();
+  return true;
+}
+function sugHide() { $('suggest').style.display = 'none'; sugList = []; sugIdx = -1; }
+$('suggest').addEventListener('click', (e) => {
+  const el = e.target.closest('.sug');
+  if (el) sugAccept(parseInt(el.getAttribute('data-i'), 10));
+});
+input.addEventListener('input', updateSuggest);
+
+/* test hook (node only, harmless in browser) */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { newDungeon: newDungeon, mulberry32: mulberry32, seedFrom: seedFrom, sparkline: sparkline, bar: bar, parseArgs: parseArgs, MISSIONS: MISSIONS,
+    levenshtein: levenshtein, closestCmd: closestCmd, cmdNames: cmdNames, ARG_HINTS: ARG_HINTS };
+}
+
+})();

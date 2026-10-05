@@ -17,9 +17,15 @@
 html,body { height:100%; margin:0; }
 body { background:var(--bg); color:var(--fg); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:15px; line-height:1.45; overflow:hidden; }
 #app { display:flex; flex-direction:column; height:100dvh; padding-bottom:env(safe-area-inset-bottom); }
-#statusbar { display:flex; justify-content:space-between; padding:8px 12px 4px; font-size:12px; color:var(--dim); border-bottom:1px solid var(--dim); }
-#out { flex:1; overflow-y:auto; padding:10px 12px; -webkit-overflow-scrolling:touch; }
-.line { margin:2px 0; word-break:break-word; }
+#statusbar { display:flex; justify-content:space-between; padding:6px 12px 5px; font-size:11px; color:var(--dim); border-bottom:1px solid var(--dim); letter-spacing:.5px; }
+#out { flex:1; overflow-y:auto; padding:8px 12px; -webkit-overflow-scrolling:touch; }
+.line { margin:3px 0; word-break:break-word; }
+/* suggestions */
+#suggest { display:none; border-top:1px solid var(--dim); max-height:196px; overflow-y:auto; background:var(--bg); }
+.sug { padding:10px 14px; font-size:14px; border-bottom:1px solid rgba(138,116,63,.22); }
+.sug:last-child { border-bottom:none; }
+.sug.on { background:var(--fg); color:var(--bg); }
+.sug.on .dim { color:var(--bg); opacity:.7; }
 .line pre { margin:2px 0; font-size:12px; line-height:1.3; overflow-x:auto; }
 .cmdline { cursor:pointer; }
 .prompt { color:var(--prompt); font-weight:bold; }
@@ -104,6 +110,7 @@ body.crt #out, body.crt #dungeonview { text-shadow:0 0 6px var(--fg); }
   <div id="statusbar"><span id="clock">--:--</span><span id="pnl">paper mode</span></div>
   <div id="out"></div>
   <div id="dungeonview" style="display:none"></div>
+  <div id="suggest"></div>
   <div id="inputrow">
     <span class="prompt">tbandz@bandz:~$</span>
     <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="command input">
