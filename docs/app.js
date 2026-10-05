@@ -243,8 +243,10 @@ defineCommand({
   explain: 'Lists every command the shell knows. Start here whenever you are lost.',
   run(args, ctx) {
     const groups = {
-      'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt'],
-      'you': ['stackz', 'games', 'note', 'notes', 'todo', 'todos', 'done', 'ideas', 'idea', 'weather', 'pomodoro', 'slate'],
+      'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt', 'install'],
+      'you': ['stackz', 'games', 'desk', 'note', 'notes', 'todo', 'todos', 'done', 'ideas', 'idea', 'weather', 'pomodoro', 'slate'],
+      'web': ['browse', 'html', 'cpp'],
+      'studio': ['studio', 'newgame', 'edit', 'run'],
       'arcade': ['dungeon', 'play', 'halo', 'fortune'],
       'fun': ['sudo', 'whoami', 'date', 'echo'],
     };
@@ -854,3 +856,263 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 })();
+
+/* ================= PHONE INSTALL ================= */
+defineCommand({
+  name: 'install',
+  help: 'install — get Bandz Shell on your phone like an app',
+  explain: 'iPhones can\'t sideload apps, but Add to Home Screen is the real deal: fullscreen icon, offline, no App Store.',
+  run(args, ctx) {
+    const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    if (standalone) { ctx.print('you\'re already running installed. ✓', 'accent'); return; }
+    ctx.print('<b>PUT ME ON YOUR PHONE</b><br>' +
+      '1. tap <b>Share</b> in Safari (the square with ↑)<br>' +
+      '2. tap <b>Add to Home Screen</b><br>' +
+      '3. open me from the icon — fullscreen, offline-ready<br>' +
+      '<span class="dim">that\'s the download. no App Store, no waiting.</span>');
+  }
+});
+
+/* ================= WEB BROWSER ================= */
+function browserGo(url) {
+  let u = url.trim();
+  if (!u) return;
+  if (!/^[a-z]+:\/\//i.test(u)) {
+    u = u.indexOf('.') === -1
+      ? 'https://duckduckgo.com/?q=' + encodeURIComponent(u)
+      : 'https://' + u;
+  }
+  $('urlbar').value = u;
+  const f = $('browserframe');
+  f.removeAttribute('srcdoc');
+  f.src = u;
+  $('browser').classList.add('open');
+}
+function browserClose() {
+  $('browser').classList.remove('open');
+  $('browserframe').src = 'about:blank';
+}
+$('gobtn').addEventListener('click', () => browserGo($('urlbar').value));
+$('urlbar').addEventListener('keydown', (e) => { if (e.key === 'Enter') browserGo($('urlbar').value); });
+$('browserclose').addEventListener('click', browserClose);
+$('openext').addEventListener('click', () => { const u = $('urlbar').value; if (u) window.open(u, '_blank'); });
+defineCommand({
+  name: 'browse',
+  help: 'browse <url> — the web, inside the terminal',
+  explain: 'Opens a real browser pane. Some sites (Google, etc.) block embedding — then use the ↗ safari button.',
+  run(args, ctx) {
+    if (!args.length) { ctx.print('browse where? <span class="dim">e.g. browse github.com</span>', 'dim'); return; }
+    browserGo(args.join(' '));
+    ctx.print('opening… <span class="dim">(✕ closes the pane)</span>');
+  }
+});
+
+/* ================= HTML PREVIEW ================= */
+defineCommand({
+  name: 'html',
+  help: 'html <code> — render HTML live',
+  explain: 'Your own little web lab. Type HTML, watch it render instantly. e.g. html <h1>yo</h1>',
+  run(args, ctx) {
+    const code = args.join(' ');
+    if (!code) {
+      ctx.print('give me HTML. <span class="dim">e.g. html &lt;h1 style="color:gold"&gt;yo&lt;/h1&gt;</span>', 'dim');
+      return;
+    }
+    const f = $('browserframe');
+    f.removeAttribute('src');
+    f.srcdoc = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:sans-serif;padding:20px;background:#111;color:#eee}</style></head><body>' + code + '</body></html>';
+    $('urlbar').value = 'preview: your HTML';
+    $('browser').classList.add('open');
+    ctx.print('rendered. ✕ closes it.', 'dim');
+  }
+});
+
+/* ================= C++ — the honest path ================= */
+defineCommand({
+  name: 'cpp',
+  help: 'c++ — can I code C++ here?',
+  explain: 'Straight answer about C++ on a phone, and the real path to it.',
+  run(args, ctx) {
+    ctx.print('<b>C++ ON YOUR PHONE — HONEST VERSION</b><br><br>' +
+      'C++ needs <i>compiling</i> — turning code into a real program takes a heavy toolchain (g++, clang) that phones don\'t have. No terminal app is going to change that.<br><br>' +
+      '<b>Your path, in order:</b><br>' +
+      '1. <b>JavaScript, right here.</b> It runs instantly in this terminal, it\'s visual, and it IS real game code — your web games are JavaScript. Learn here first.<br>' +
+      '2. <b>Python</b> via the Matrix terminal (Pyodide) — also runs on your phone today.<br>' +
+      '3. <b>C++ later, on the laptop</b> — when the v2 backend lands, this terminal can send C++ to your laptop, compile it for real, and show you the result. That\'s also where Unreal-engine-style dev lives.<br><br>' +
+      '<span class="dim">Devs aren\'t made by the language — they\'re made by finishing games. Start with `newgame`.</span>');
+  }
+});
+
+/* ================= DESK — your mini computer ================= */
+const DESK = { tab: 'notes', q: '' };
+const DESK_DEFS = {
+  notes: { key: 'bs_notes', addLabel: 'note', isTodo: false },
+  todos: { key: 'bs_todos', addLabel: 'todo', isTodo: true },
+  ideas: { key: 'bs_ideas', addLabel: 'idea', isTodo: false },
+};
+function deskItems() {
+  const def = DESK_DEFS[DESK.tab];
+  let l = listGet(def.key);
+  if (DESK.q) {
+    const q = DESK.q.toLowerCase();
+    l = l.filter((x) => (def.isTodo ? x.t : x).toLowerCase().indexOf(q) !== -1);
+  }
+  return l;
+}
+function deskRender() {
+  document.querySelectorAll('.dtab').forEach((b) => b.classList.toggle('on', b.getAttribute('data-tab') === DESK.tab));
+  const def = DESK_DEFS[DESK.tab];
+  const all = listGet(def.key);
+  const l = deskItems();
+  const box = $('desklist');
+  if (!l.length) { box.innerHTML = '<div class="dim" style="padding:12px">nothing here yet.</div>'; return; }
+  box.innerHTML = l.map((x) => {
+    const i = all.indexOf(x);
+    const txt = def.isTodo ? x.t : x;
+    const done = def.isTodo && x.done;
+    return '<div class="ditem' + (done ? ' doneitem' : '') + '" data-i="' + i + '">' +
+      '<button class="ddel" data-del="' + i + '">✕</button>' +
+      '<span class="dtxt" data-tog="' + i + '">' + (def.isTodo && !done ? (i + 1) + '. ' : def.isTodo && done ? '✓ ' : '• ') + esc(txt) + '</span></div>';
+  }).join('');
+}
+function deskAdd() {
+  const v = $('deskinput').value.trim();
+  if (!v) return;
+  const def = DESK_DEFS[DESK.tab];
+  listAdd(def.key, def.isTodo ? { t: v, done: false } : v);
+  $('deskinput').value = '';
+  deskRender();
+  blip(880, 0.06);
+}
+function deskOpen() { DESK.q = ''; $('desksearch').value = ''; $('desk').classList.add('open'); deskRender(); $('deskinput').focus(); }
+function deskClose() { $('desk').classList.remove('open'); input.focus(); }
+document.querySelectorAll('.dtab').forEach((b) => b.addEventListener('click', () => { DESK.tab = b.getAttribute('data-tab'); deskRender(); }));
+$('desksearch').addEventListener('input', (e) => { DESK.q = e.target.value; deskRender(); });
+$('deskaddbtn').addEventListener('click', deskAdd);
+$('deskinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') deskAdd(); });
+$('deskclose').addEventListener('click', deskClose);
+$('desklist').addEventListener('click', (e) => {
+  const def = DESK_DEFS[DESK.tab];
+  const del = e.target.getAttribute('data-del');
+  const tog = e.target.getAttribute('data-tog');
+  if (del != null) {
+    const l = listGet(def.key); l.splice(parseInt(del, 10), 1);
+    storeSet(def.key, JSON.stringify(l)); deskRender();
+  } else if (tog != null && def.isTodo) {
+    const l = listGet(def.key); const it = l[parseInt(tog, 10)];
+    if (it) { it.done = !it.done; storeSet(def.key, JSON.stringify(l)); deskRender(); }
+  }
+});
+defineCommand({
+  name: 'desk',
+  help: 'desk — your mini computer (notes/todos/ideas)',
+  explain: 'Your organized space. Same data as the note/todo/idea commands, but visual: tabs, search, tap to toggle.',
+  run(args, ctx) { deskOpen(); }
+});
+
+/* ================= STUDIO — build games here ================= */
+function gameKey(n) { return 'bs_game_' + n; }
+function gameGet(n) { return storeJSON(gameKey(n), null); }
+function gameSave(n, code) { storeSet(gameKey(n), JSON.stringify({ code: code, updated: Date.now() })); }
+function myGames() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('bs_game_') === 0) out.push(k.slice(8));
+    }
+  } catch (e) {}
+  return out.sort();
+}
+let editingGame = null;
+function editorOpen(name, code) {
+  editingGame = name;
+  $('edtitle').textContent = 'edit · ' + name;
+  $('edcode').value = code;
+  $('edmsg').textContent = 'edit the code · save keeps it on your phone · run plays it';
+  $('editor').classList.add('open');
+}
+function editorClose() { $('editor').classList.remove('open'); editingGame = null; input.focus(); }
+$('edclose').addEventListener('click', editorClose);
+$('edsave').addEventListener('click', () => {
+  if (!editingGame) return;
+  gameSave(editingGame, $('edcode').value);
+  $('edmsg').textContent = 'saved ✓ ' + new Date().toLocaleTimeString();
+  blip(990, 0.08);
+});
+$('edrun').addEventListener('click', () => {
+  if (!editingGame) return;
+  gameSave(editingGame, $('edcode').value);
+  runGameSrc($('edcode').value, editingGame);
+});
+function runGameSrc(code, title) {
+  $('editor').classList.remove('open');
+  $('arcadetitle').textContent = '▸ ' + title;
+  const f = $('arcadeframe');
+  f.removeAttribute('src');
+  f.srcdoc = code;
+  $('arcade').classList.add('open');
+  blip(520, 0.08);
+}
+defineCommand({
+  name: 'studio',
+  help: 'studio — build games in the terminal',
+  explain: 'Your game jam machine. newgame scaffolds one, edit opens the code, run plays it. All on your phone.',
+  run(args, ctx) {
+    const mine = myGames();
+    ctx.print('<b>GAME STUDIO</b> <span class="dim">— build games, learn to code, ship portfolio pieces</span><br>' +
+      'templates: <b>doomlike</b> <span class="dim">(DOOM-style raycaster — heavily commented so you can learn it)</span><br>' +
+      (mine.length ? 'your games: ' + mine.map((g) => '<b>' + esc(g) + '</b>').join(' · ') + '<br>' : '') +
+      '<span class="dim">newgame doomlike → edit my-doomlike → run my-doomlike</span>');
+  }
+});
+defineCommand({
+  name: 'newgame',
+  help: 'newgame [template] [name] — scaffold a game',
+  explain: 'Copies a template into your own game that you can edit and run. This is how devs start: remix, don\'t blank-page.',
+  run(args, ctx) {
+    const tpl = (args[0] || '').toLowerCase();
+    if (!tpl) {
+      ctx.print('templates: <b>doomlike</b><br><span class="dim">e.g. newgame doomlike my-shooter</span>');
+      return;
+    }
+    if (tpl !== 'doomlike') { ctx.print('no template "' + esc(tpl) + '" yet. <span class="dim">doomlike is the one.</span>'); return; }
+    const name = (args[1] || 'my-doomlike').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    ctx.print('scaffolding <b>' + esc(name) + '</b>…');
+    fetch('studio/doomlike.html').then((r) => {
+      if (!r.ok) throw new Error('template missing');
+      return r.text();
+    }).then((code) => {
+      gameSave(name, code);
+      ctx.print('✓ <b>' + esc(name) + '</b> is yours now.<br><span class="dim">edit ' + esc(name) + ' → change the code → run ' + esc(name) + ' → play it.<br>every LEARN comment in the code teaches you how it works.</span>');
+      blip(990, 0.1);
+    }).catch(() => ctx.print('couldn\'t fetch the template. check your signal.', 'dim'));
+  }
+});
+defineCommand({
+  name: 'edit',
+  help: 'edit <game> — open the code editor',
+  explain: 'Opens your game\'s code. Change numbers, colors, maps — save, run, see what happens. That loop IS learning to code.',
+  run(args, ctx) {
+    const name = (args[0] || '').toLowerCase();
+    if (!name) {
+      const mine = myGames();
+      ctx.print(mine.length ? 'your games: ' + mine.map(esc).join(' · ') + '<br><span class="dim">edit &lt;name&gt;</span>' : 'no games yet. <span class="dim">newgame doomlike</span> first.', 'dim');
+      return;
+    }
+    const g = gameGet(name);
+    if (!g) { ctx.print('no game "' + esc(name) + '". <span class="dim">newgame doomlike ' + esc(name) + '</span> to create it.', 'dim'); return; }
+    editorOpen(name, g.code);
+  }
+});
+defineCommand({
+  name: 'run',
+  help: 'run <game> — play your game',
+  explain: 'Launches your game fullscreen. Made something cool? This is your portfolio piece.',
+  run(args, ctx) {
+    const name = (args[0] || '').toLowerCase();
+    const g = name && gameGet(name);
+    if (!g) { ctx.print('run what? <span class="dim">run &lt;game&gt; — see `studio`</span>', 'dim'); return; }
+    runGameSrc(g.code, name);
+  }
+});

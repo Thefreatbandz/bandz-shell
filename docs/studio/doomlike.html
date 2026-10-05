@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>my-doomlike · bandz studio</title>
+<style>
+  * { box-sizing:border-box; margin:0; }
+  html,body { height:100%; background:#0d0d0f; overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace; }
+  #wrap { display:flex; flex-direction:column; height:100dvh; align-items:center; justify-content:center; gap:8px; }
+  canvas { image-rendering:pixelated; background:#000;
+    width:min(100vw, calc((100dvh - 120px) * 1.6)); height:auto; aspect-ratio:320/200;
+    border:1px solid #8a743f; }
+  #touch { display:flex; gap:10px; }
+  #touch button { width:64px; height:64px; border-radius:50%; font-size:20px;
+    background:transparent; color:#e8c15a; border:2px solid #8a743f; }
+  #touch button:active { background:#e8c15a; color:#0d0d0f; }
+  #fire { border-color:#e8c15a !important; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="320" height="200"></canvas>
+  <div id="touch">
+    <button id="tL">◀</button><button id="tU">▲</button><button id="tD">▼</button><button id="tR">▶</button>
+    <button id="fire">✸</button>
+  </div>
+</div>
+<script>
+/* ============================================================================
+   MY DOOMLIKE — a tiny DOOM-style shooter YOU can edit.
+   ----------------------------------------------------------------------------
+   HOW IT WORKS (the 30-second version):
+   This is called RAYCASTING — the same trick Wolfenstein 3D used in 1992.
+   For every vertical strip of the screen (320 of them), we shoot an imaginary
+   ray out from the player into the map. When the ray hits a wall, we draw a
+   vertical slice of wall — tall if the wall is close, short if far.
+   320 rays = a 3D-looking world. That's the whole magic trick.
+   ----------------------------------------------------------------------------
+   LEARN: change numbers, save, run, see what happens. That's game dev.
+   ============================================================================ */
+'use strict';
+
+/* ---------------- LEARN: the world is just text ----------------
+   '#' walls are '1','2','3' (three looks). '.' is empty floor.
+   Try editing this map — add rooms, corridors. Just keep the outer border solid! */
+var MAP = [
+  "1111111111111111",
+  "1..............1",
+  "1..2222...333..1",
+  "1..2222...333..1",
+  "1..............1",
+  "1..11.....22...1",
+  "1..11.....22...1",
+  "1......11......1",
+  "1......11......1",
+  "1..333....111..1",
+  "1..333....111..1",
+  "1..............1",
+  "1..2......3....1",
+  "1..2......3....1",
+  "1..............1",
+  "1111111111111111",
+];
+var MW = MAP[0].length, MH = MAP.length;
+
+/* ---------------- LEARN: the player is just 3 numbers ----------------
+   px,py = position on the map. pa = angle we're facing (radians). */
+var px = 2.5, py = 2.5, pa = 0.6;
+var php = 100, ammoCd = 0, score = 0, level = 1, muzzle = 0, hurt = 0;
+var state = 'title'; // title | play | dead | clear
+
+/* ---------------- LEARN: RGB COLOR GRADING ----------------
+   Real games don't just draw flat colors — they GRADE them.
+   Closer = brighter. Far = darker + bluer (like fog). Shadow sides darker.
+   Tweak these numbers and watch the mood change. */
+var GRADE = {
+  fogDist: 10,      // walls fade out beyond this distance
+  fogBlue: 0.35,    // how blue the fog gets (0 = none, 1 = deep blue)
+  sideDark: 0.72,   // walls facing sideways are darker (fake lighting!)
+  warmShadow: 0.12, // warm tint in dark areas (try 0.3 for sunset vibes)
+};
+function grade(r, g, b, dist, side) {
+  var f = Math.max(0, 1 - dist / GRADE.fogDist);      // 1 = close, 0 = far
+  var m = (0.25 + 0.75 * f) * (side ? GRADE.sideDark : 1);
+  r = r * m; g = g * m; b = b * m;
+  b += (1 - f) * 255 * GRADE.fogBlue * 0.4;           // blue fog far away
+  r += (1 - f) * 255 * GRADE.warmShadow * 0.3;        // warm shadows
+  return [r | 0, g | 0, b | 0];
+}
+function css(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+
+/* ---------------- LEARN: procedural textures ----------------
+   No image files! We GENERATE wall patterns with math.
+   tx,ty are 0..63 positions on the wall. type 1/2/3 = brick/tech/gold. */
+function texColor(type, tx, ty) {
+  if (type === '1') { // brick — red-brown with mortar lines
+    var mortar = (ty % 16 === 0) || ((tx + (ty >> 4) * 32) % 64 === 0);
+    return mortar ? [60, 40, 36] : [150 + (tx % 16), 70, 55];
+  }
+  if (type === '2') { // tech panel — blue-gray with rivets
+    var rivet = (tx % 32 < 3 && ty % 32 < 3);
+    var stripe = (ty % 8 === 0);
+    return rivet ? [200, 200, 210] : (stripe ? [70, 90, 110] : [50, 65, 85]);
+  }
+  // gold door — the bandz special
+  var shine = Math.abs(((tx + ty) % 32) - 16);
+  return [190 + shine * 2, 140 + shine, 40];
+}
+
+/* ---------------- LEARN: DDA raycasting ----------------
+   DDA = "Digital Differential Analyzer". Fancy name, simple idea:
+   walk the ray forward in small steps until it hits a non-'.' cell.
+   We step smartly (whole grid cells at a time) so it's fast. */
+function castRay(angle) {
+  var dx = Math.cos(angle), dy = Math.sin(angle);
+  var mx = px | 0, my = py | 0;
+  var ddx = Math.abs(1 / (dx || 1e-9)), ddy = Math.abs(1 / (dy || 1e-9));
+  var stepx, stepy, sdx, sdy;
+  if (dx < 0) { stepx = -1; sdx = (px - mx) * ddx; } else { stepx = 1; sdx = (mx + 1 - px) * ddx; }
+  if (dy < 0) { stepy = -1; sdy = (py - my) * ddy; } else { stepy = 1; sdy = (my + 1 - py) * ddy; }
+  var side = 0, guard = 0, hit = null;
+  while (guard++ < 64) {
+    if (sdx < sdy) { sdx += ddx; mx += stepx; side = 0; }
+    else { sdy += ddy; my += stepy; side = 1; }
+    if (mx < 0 || my < 0 || mx >= MW || my >= MH) break;
+    var cell = MAP[my][mx];
+    if (cell !== '.') { hit = cell; break; }
+  }
+  if (!hit) return { dist: 99, side: 0, tex: '1', texX: 0 };
+  // perpendicular distance (removes the fish-eye warp!)
+  var dist = side === 0 ? (mx - px + (1 - stepx) / 2) / (dx || 1e-9)
+                        : (my - py + (1 - stepy) / 2) / (dy || 1e-9);
+  // where exactly on the wall did we hit? (for texture mapping)
+  var wallX = side === 0 ? py + dist * dy : px + dist * dx;
+  wallX -= Math.floor(wallX);
+  return { dist: Math.abs(dist), side: side, tex: hit, texX: wallX };
+}
+
+/* ---------------- enemies ---------------- */
+var enemies = [];
+function spawnEnemies(n) {
+  enemies = [];
+  var tries = 0;
+  while (enemies.length < n && tries++ < 300) {
+    var x = 1.5 + Math.random() * (MW - 3), y = 1.5 + Math.random() * (MH - 3);
+    if (MAP[y | 0][x | 0] !== '.') continue;
+    var d = Math.hypot(x - px, y - py);
+    if (d < 4) continue;
+    enemies.push({ x: x, y: y, hp: 3, alive: true });
+  }
+}
+
+/* ---------------- input ---------------- */
+var keys = {};
+function bindBtn(id, code) {
+  var el = document.getElementById(id);
+  var on = function (e) { e.preventDefault(); keys[code] = true; };
+  var off = function (e) { e.preventDefault(); keys[code] = false; };
+  el.addEventListener('touchstart', on, { passive: false });
+  el.addEventListener('touchend', off, { passive: false });
+  el.addEventListener('mousedown', on); el.addEventListener('mouseup', off);
+}
+if (typeof document !== 'undefined' && document.getElementById('tL')) {
+  bindBtn('tL', 'left'); bindBtn('tR', 'right'); bindBtn('tU', 'up'); bindBtn('tD', 'down');
+  bindBtn('fire', 'fire');
+  document.addEventListener('keydown', function (e) {
+    var k = e.key.toLowerCase();
+    if (k === 'arrowleft' || k === 'a') keys.left = true;
+    if (k === 'arrowright' || k === 'd') keys.right = true;
+    if (k === 'arrowup' || k === 'w') keys.up = true;
+    if (k === 'arrowdown' || k === 's') keys.down = true;
+    if (k === ' ') { keys.fire = true; e.preventDefault(); }
+    if (state !== 'play' && (k === 'enter' || k === ' ')) startGame();
+  });
+  document.addEventListener('keyup', function (e) {
+    var k = e.key.toLowerCase();
+    if (k === 'arrowleft' || k === 'a') keys.left = false;
+    if (k === 'arrowright' || k === 'd') keys.right = false;
+    if (k === 'arrowup' || k === 'w') keys.up = false;
+    if (k === 'arrowdown' || k === 's') keys.down = false;
+    if (k === ' ') keys.fire = false;
+  });
+  document.getElementById('game').addEventListener('touchstart', function () {
+    if (state !== 'play') startGame();
+  }, { passive: true });
+}
+
+/* ---------------- combat ---------------- */
+function shoot() {
+  if (ammoCd > 0) return;
+  ammoCd = 0.28; muzzle = 0.08;
+  var best = null, bestD = 99;
+  enemies.forEach(function (e) {
+    if (!e.alive) return;
+    var dx = e.x - px, dy = e.y - py;
+    var d = Math.hypot(dx, dy);
+    var ang = Math.atan2(dy, dx), diff = angDiff(ang, pa);
+    if (Math.abs(diff) < 0.12 && d < bestD) {
+      var wall = castRay(pa).dist;
+      if (d < wall) { best = e; bestD = d; }
+    }
+  });
+  if (best) {
+    best.hp -= 1;
+    if (best.hp <= 0) { best.alive = false; score += 100; }
+  }
+}
+function angDiff(a, b) {
+  var d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/* ---------------- update ---------------- */
+function moveOk(x, y) {
+  return MAP[y | 0] && MAP[y | 0][x | 0] === '.' &&
+         !enemies.some(function (e) { return e.alive && Math.hypot(e.x - x, e.y - y) < 0.4; });
+}
+function step(dt) {
+  if (state !== 'play') return;
+  var sp = 3.2 * dt, ts = 2.4 * dt;
+  if (keys.left) pa -= ts;
+  if (keys.right) pa += ts;
+  var nx = px, ny = py;
+  if (keys.up) { nx += Math.cos(pa) * sp; ny += Math.sin(pa) * sp; }
+  if (keys.down) { nx -= Math.cos(pa) * sp; ny -= Math.sin(pa) * sp; }
+  if (moveOk(nx, py)) px = nx;
+  if (moveOk(px, ny)) py = ny;
+  if (keys.fire) shoot();
+  ammoCd = Math.max(0, ammoCd - dt);
+  muzzle = Math.max(0, muzzle - dt);
+  hurt = Math.max(0, hurt - dt * 2);
+  // LEARN: dumb-but-fun enemy AI — walk at you, bite when close
+  enemies.forEach(function (e) {
+    if (!e.alive) return;
+    var dx = px - e.x, dy = py - e.y, d = Math.hypot(dx, dy);
+    if (d < 7 && d > 0.5) {
+      var ex = e.x + dx / d * 1.4 * dt, ey = e.y + dy / d * 1.4 * dt;
+      if (MAP[ey | 0][ex | 0] === '.') { e.x = ex; e.y = ey; }
+    }
+    if (d < 0.7 && hurt <= 0) { php -= 8; hurt = 0.6; if (php <= 0) state = 'dead'; }
+  });
+  if (enemies.length && enemies.every(function (e) { return !e.alive; })) state = 'clear';
+}
+function startGame() {
+  px = 2.5; py = 2.5; pa = 0.6; php = 100; score = 0; level = 1;
+  spawnEnemies(5);
+  state = 'play';
+}
+function nextLevel() {
+  level++;
+  px = 2.5; py = 2.5; pa = 0.6; php = Math.min(100, php + 30);
+  spawnEnemies(4 + level);
+  state = 'play';
+}
+
+/* ---------------- render ---------------- */
+var cv = typeof document !== 'undefined' ? document.getElementById('game') : null;
+var ctx = cv ? cv.getContext('2d') : null;
+var W = 320, H = 200, zbuf = new Array(W);
+function render() {
+  if (!ctx) return;
+  var img = ctx.createImageData(W, H);
+  var D = img.data;
+  var i;
+  // LEARN: ceiling + floor gradients — cheap and pretty
+  for (var y = 0; y < H / 2; y++) {
+    var cf = 1 - y / (H / 2); // 1 at top → 0 at horizon
+    var cr = 12 + 20 * cf, cg = 10 + 14 * cf, cb = 18 + 26 * cf;
+    for (var x = 0; x < W; x++) { i = (y * W + x) * 4; D[i] = cr; D[i + 1] = cg; D[i + 2] = cb; D[i + 3] = 255; }
+  }
+  for (y = H / 2; y < H; y++) {
+    var ff = (y - H / 2) / (H / 2); // 0 at horizon → 1 at bottom
+    var fr = 26 + 30 * ff, fg = 20 + 22 * ff, fb = 16 + 16 * ff;
+    for (x = 0; x < W; x++) { i = (y * W + x) * 4; D[i] = fr; D[i + 1] = fg; D[i + 2] = fb; D[i + 3] = 255; }
+  }
+  // LEARN: the 320 rays — one per screen column
+  var FOV = Math.PI / 3; // 60 degrees, like classic DOOM
+  for (x = 0; x < W; x++) {
+    var cam = (x / W - 0.5) * FOV;      // spread rays across view
+    var r = castRay(pa + cam);
+    zbuf[x] = r.dist;
+    var wallH = Math.min(H * 2, (H / Math.max(0.05, r.dist)) * 0.9);
+    var y0 = ((H - wallH) / 2) | 0, y1 = ((H + wallH) / 2) | 0;
+    var tx = Math.min(63, (r.texX * 64) | 0);
+    for (y = Math.max(0, y0); y < Math.min(H, y1); y++) {
+      var ty = (((y - y0) / Math.max(1, y1 - y0)) * 64) | 0;
+      var t = texColor(r.tex, tx, ty);
+      var c = grade(t[0], t[1], t[2], r.dist, r.side);
+      i = (y * W + x) * 4;
+      D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // LEARN: sprites = billboards. Project enemy to screen, scale by distance,
+  // only draw where it's closer than the wall (zbuf check).
+  var list = enemies.filter(function (e) { return e.alive; }).map(function (e) {
+    var dx = e.x - px, dy = e.y - py;
+    return { e: e, d: Math.hypot(dx, dy), a: angDiff(Math.atan2(dy, dx), pa) };
+  }).filter(function (s) { return Math.abs(s.a) < FOV / 2 + 0.3; })
+    .sort(function (a, b) { return b.d - a.d; }); // far → near (painter's algorithm!)
+  list.forEach(function (s) {
+    var sx = (0.5 + s.a / FOV) * W;
+    var size = Math.min(H, (H / Math.max(0.1, s.d)) * 0.55) | 0;
+    var x0 = (sx - size / 2) | 0;
+    for (var x = x0; x < x0 + size; x++) {
+      if (x < 0 || x >= W || zbuf[x] < s.d) continue;
+      var h = (size * (x - x0)) / size;
+      for (var y = (H - size) / 2 | 0; y < (H + size) / 2; y++) {
+        if (y < 0 || y >= H) continue;
+        var rel = (y - (H - size) / 2) / size; // 0 top → 1 bottom
+        var c;
+        if (rel < 0.25) c = [180, 60, 60];            // head
+        else if (rel > 0.3 && rel < 0.42 && Math.abs(x - sx) < size * 0.18) c = [255, 240, 200]; // eyes!!
+        else c = [120 + h * 0.5, 40, 40];             // body
+        c = grade(c[0], c[1], c[2], s.d, 0);
+        ctx.fillStyle = css(c);
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  });
+  // HUD
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, 18);
+  ctx.fillStyle = '#e8c15a'; ctx.font = '10px monospace';
+  ctx.fillText('HP ' + Math.max(0, php | 0) + '   SCORE ' + score + '   LVL ' + level, 6, 12);
+  // crosshair
+  ctx.fillStyle = '#fff'; ctx.fillRect(W / 2 - 1, H / 2 - 5, 2, 2);
+  if (muzzle > 0) { ctx.fillStyle = 'rgba(255,220,120,0.5)'; ctx.fillRect(0, 0, W, H); }
+  if (hurt > 0) { ctx.fillStyle = 'rgba(200,30,30,' + (hurt * 0.5) + ')'; ctx.fillRect(0, 0, W, H); }
+  if (state === 'title') {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e8c15a'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('MY DOOMLIKE', W / 2, 80);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#fff';
+    ctx.fillText('WASD / arrows or buttons · SPACE to shoot', W / 2, 110);
+    ctx.fillText('kill all demons · tap / ENTER to start', W / 2, 130);
+    ctx.textAlign = 'left';
+  } else if (state === 'dead') {
+    ctx.fillStyle = 'rgba(120,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('YOU DIED', W / 2, 95);
+    ctx.font = '11px monospace'; ctx.fillText('score ' + score + ' · tap to retry', W / 2, 120);
+    ctx.textAlign = 'left';
+  } else if (state === 'clear') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e8c15a'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('FLOOR CLEAR!', W / 2, 95);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#fff';
+    ctx.fillText('tap for level ' + (level + 1), W / 2, 120);
+    ctx.textAlign = 'left';
+    if (keys.fire) { keys.fire = false; nextLevel(); }
+  }
+}
+
+/* ---------------- main loop ---------------- */
+var last = 0;
+function loop(t) {
+  var dt = Math.min(0.05, (t - last) / 1000 || 0.016);
+  last = t;
+  step(dt);
+  render();
+  if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(loop);
+}
+if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(loop);
+
+/* node test hook (harmless in browser) */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { castRay: castRay, step: step, spawnEnemies: spawnEnemies, MAP: MAP,
+    state: function () { return { px: px, py: py, pa: pa, php: php, score: score }; },
+    setState: function (s) { state = s; }, setPa: function (a) { pa = a; }, keys: keys };
+}
+</script>
+</body>
+</html>

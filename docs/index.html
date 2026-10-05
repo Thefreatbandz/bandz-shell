@@ -10,6 +10,7 @@
 <title>Bandz Shell</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
 :root { --bg:#0d0d0f; --fg:#e8c15a; --dim:#8a743f; --accent:#ffe9a8; --prompt:#e8c15a; }
 * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -39,6 +40,38 @@ a { color:var(--accent); }
 #arcadebar { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--bg); color:var(--fg); border-bottom:1px solid var(--dim); font-size:14px; }
 #arcadebar button { background:transparent; color:var(--fg); border:1px solid var(--dim); border-radius:8px; padding:8px 14px; font:inherit; }
 #arcadeframe { flex:1; border:none; width:100%; }
+/* desk — your mini computer */
+#desk { display:none; position:fixed; inset:0; z-index:200; background:var(--bg); flex-direction:column; }
+#desk.open { display:flex; }
+#deskbar { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--dim); font-size:14px; }
+#deskbar button { background:transparent; color:var(--fg); border:1px solid var(--dim); border-radius:8px; padding:8px 14px; font:inherit; }
+#desktabs { display:flex; gap:8px; padding:10px 12px 0; }
+.dtab { background:transparent; color:var(--dim); border:1px solid var(--dim); border-radius:8px; padding:8px 14px; font:inherit; font-size:13px; }
+.dtab.on { color:var(--bg); background:var(--fg); border-color:var(--fg); font-weight:bold; }
+#desksearch { margin:10px 12px 0; background:transparent; border:1px solid var(--dim); border-radius:8px; color:var(--fg); font:inherit; font-size:14px; padding:9px 12px; outline:none; }
+#desklist { flex:1; overflow-y:auto; padding:10px 12px; -webkit-overflow-scrolling:touch; }
+.ditem { border:1px solid var(--dim); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:14px; }
+.ditem .ddel { float:right; color:var(--dim); background:none; border:none; font:inherit; font-size:16px; }
+.ditem.doneitem { opacity:.55; text-decoration:line-through; }
+#deskadd { display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--dim); padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+#deskadd input { flex:1; background:transparent; border:1px solid var(--dim); border-radius:8px; color:var(--fg); font:inherit; font-size:16px; padding:10px 12px; outline:none; min-width:0; }
+#deskadd button { background:var(--fg); color:var(--bg); border:none; border-radius:8px; padding:10px 16px; font:inherit; font-weight:bold; }
+/* browser overlay */
+#browser { display:none; position:fixed; inset:0; z-index:200; background:var(--bg); flex-direction:column; }
+#browser.open { display:flex; }
+#bbar { display:flex; gap:8px; padding:10px 12px; border-bottom:1px solid var(--dim); align-items:center; }
+#bbar input { flex:1; background:transparent; border:1px solid var(--dim); border-radius:8px; color:var(--fg); font:inherit; font-size:14px; padding:9px 12px; outline:none; min-width:0; }
+#bbar button { background:transparent; color:var(--fg); border:1px solid var(--dim); border-radius:8px; padding:9px 12px; font:inherit; font-size:13px; white-space:nowrap; }
+#browserframe { flex:1; border:none; width:100%; background:#fff; }
+/* code editor overlay */
+#editor { display:none; position:fixed; inset:0; z-index:200; background:var(--bg); flex-direction:column; }
+#editor.open { display:flex; }
+#edbar { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--dim); font-size:14px; gap:8px; }
+#edbar .grp { display:flex; gap:8px; }
+#edbar button { background:transparent; color:var(--fg); border:1px solid var(--dim); border-radius:8px; padding:8px 12px; font:inherit; font-size:13px; }
+#edbar button.go { background:var(--fg); color:var(--bg); font-weight:bold; border-color:var(--fg); }
+#edcode { flex:1; background:#000; color:var(--fg); border:none; outline:none; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; padding:12px; resize:none; white-space:pre; }
+#edmsg { padding:6px 14px; font-size:12px; color:var(--dim); border-top:1px solid var(--dim); }
 /* CRT */
 #crtfx { display:none; position:fixed; inset:0; pointer-events:none; z-index:50;
   background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
@@ -80,6 +113,31 @@ body.crt #out, body.crt #dungeonview { text-shadow:0 0 6px var(--fg); }
 <div id="arcade">
   <div id="arcadebar"><span id="arcadetitle">arcade</span><button id="arcadeclose">✕ exit</button></div>
   <iframe id="arcadeframe" title="arcade" allow="autoplay; fullscreen; gamepad"></iframe>
+</div>
+<div id="desk">
+  <div id="deskbar"><span>▸ desk <span class="dim">· your mini computer</span></span><button id="deskclose">✕ exit</button></div>
+  <div id="desktabs">
+    <button class="dtab on" data-tab="notes">notes</button>
+    <button class="dtab" data-tab="todos">todos</button>
+    <button class="dtab" data-tab="ideas">ideas</button>
+  </div>
+  <input id="desksearch" placeholder="search…" autocomplete="off">
+  <div id="desklist"></div>
+  <div id="deskadd"><input id="deskinput" placeholder="add…" autocomplete="off"><button id="deskaddbtn">add</button></div>
+</div>
+<div id="browser">
+  <div id="bbar">
+    <input id="urlbar" placeholder="https://…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="gobtn">go</button>
+    <button id="openext">↗ safari</button>
+    <button id="browserclose">✕</button>
+  </div>
+  <iframe id="browserframe" title="browser" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+</div>
+<div id="editor">
+  <div id="edbar"><span id="edtitle">edit</span><span class="grp"><button id="edsave">save</button><button id="edrun" class="go">▶ run</button><button id="edclose">✕</button></span></div>
+  <textarea id="edcode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div id="edmsg">edit the code · save keeps it on your phone · run plays it</div>
 </div>
 <script src="app.js"></script>
 </body>
