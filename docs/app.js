@@ -576,13 +576,17 @@ defineCommand({
 /* ---- arcade (DOOM live, more loading) ---- */
 function arcadeOpen(title, url) {
   $('arcadetitle').textContent = '▸ ' + title;
-  $('arcadeframe').src = url;
+  const f = $('arcadeframe');
+  f.removeAttribute('srcdoc'); // srcdoc beats src when both are set — clear the last user game
+  f.src = url;
   $('arcade').classList.add('open');
   blip(520, 0.08);
 }
 function arcadeClose() {
   $('arcade').classList.remove('open');
-  $('arcadeframe').src = 'about:blank';
+  const f = $('arcadeframe');
+  f.removeAttribute('srcdoc');
+  f.src = 'about:blank';
   input.focus();
 }
 $('arcadeclose').addEventListener('click', arcadeClose);
@@ -817,7 +821,16 @@ defineCommand({
     v.style.display = 'block';
     v.innerHTML = '';
     ctx.print('<b>DUNGEON</b> <span class="dim">' + (daily ? '· daily seed — same dungeon for everyone today' : '· floor 1 · find the <b>&gt;</b> stairs') + '</span>');
-    dungeonDraw('move: WASD / arrows / swipe · attack: walk into goblins');
+    try {
+      dungeonDraw('move: WASD / arrows / swipe · attack: walk into goblins');
+    } catch (err) {
+      // never leave a broken dungeon wedged: it captures WASD keys and would eat typing
+      S.dungeon = null;
+      v.style.display = 'none';
+      ctx.print('dungeon crashed on launch: ' + esc(err && err.message) + ' <span class="dim">— cleaned up so it can\'t eat your keys</span>');
+      input.focus();
+      return;
+    }
     input.blur();
   }
 });
@@ -829,7 +842,17 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   const map = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0], arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0] };
   if (k === 'q') { e.preventDefault(); dungeonQuit(); return; }
-  if (map[k]) { e.preventDefault(); dungeonMove(map[k][0], map[k][1]); }
+  if (map[k]) {
+    e.preventDefault();
+    try { dungeonMove(map[k][0], map[k][1]); }
+    catch (err) {
+      // a mid-game crash must not wedge the keyboard either
+      S.dungeon = null;
+      try { $('dungeonview').style.display = 'none'; } catch (e2) {}
+      print('dungeon crashed: ' + esc(err.message) + ' <span class="dim">— cleaned up so it can\'t eat your keys</span>');
+      input.focus();
+    }
+  }
 });
 // swipe to move in the dungeon
 (function () {
