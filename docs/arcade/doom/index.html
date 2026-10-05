@@ -27,13 +27,14 @@ canvas.on { display:block; }
 </head>
 <body>
 <div id="wrap">
-  <header><span>▸ DOOM <span style="color:var(--dim)">· bandz arcade · freedoom</span></span><a href="javascript:history.back()">✕ close</a></header>
+  <header><span>▸ DOOM <span style="color:var(--dim)">· bandz arcade · freedoom</span> <span id="padstat" style="display:none;color:var(--dim)"></span></span><a href="javascript:history.back()">✕ close</a></header>
   <div id="stage">
     <div id="loader"><span class="spin">◌</span><br><span id="loadmsg">summoning demons…</span></div>
     <canvas id="canvas" tabindex="0"></canvas>
   </div>
-  <div id="hint">desktop: WASD + mouse · phone: touch controls · tap canvas to focus</div>
+  <div id="hint">desktop: WASD + mouse · phone: touch controls · controller supported 🎮 · tap canvas to focus</div>
 </div>
+<script src="pad.js"></script>
 <script>
 var loadmsg = document.getElementById('loadmsg');
 function setStatus(t) { if (t) loadmsg.textContent = t.replace(/<[^>]*>/g, ''); }
@@ -72,10 +73,10 @@ function boot() {
     try {
       olySetup({
         'Escape': { lbl: '≡' }, 'Enter': { lbl: '⏎', pos: [15, 0] },
-        'KeyW': { lbl: 'W', anc: 'B', pos: [10, 20], shape: 'U' },
-        'KeyS': { lbl: 'S', anc: 'B', pos: [10, 0], shape: 'D' },
-        'KeyA': { lbl: 'A', anc: 'B', pos: [0, 10], shape: 'L' },
-        'KeyD': { lbl: 'D', anc: 'B', pos: [20, 10], shape: 'R' },
+        'KeyW': { lbl: 'W', anc: 'B', pos: [18, 36], shape: 'U' },
+        'KeyS': { lbl: 'S', anc: 'B', pos: [18, 0], shape: 'D' },
+        'KeyA': { lbl: 'A', anc: 'B', pos: [0, 18], shape: 'L' },
+        'KeyD': { lbl: 'D', anc: 'B', pos: [36, 18], shape: 'R' },
         'ControlLeft': { lbl: '✸', anc: 'RB', pos: [0, 10] },
         'Space': { lbl: '○', anc: 'RB', pos: [20, 10] },
         'Tab': { lbl: '⇥', anc: 'R', pos: [30, 0] }

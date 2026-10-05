@@ -872,7 +872,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 6; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 7; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
