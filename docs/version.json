@@ -1,1 +1,1 @@
-{"build":14,"notes":"Offline mode: arcade games downloadable for no-wifi play (IDB game data + cached engines)"}
+{"build":15,"notes":"Offline mode fix: status can reach ready on desktop (shell pre-caches all engine files)"}

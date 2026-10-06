@@ -743,7 +743,16 @@ function offlineDownload(name, ctx) {
   function onMsg(e) {
     var d = e.data || {};
     if (!d || d.game !== name) return;
-    if (d.type === 'arcade-offline-ready') finish(true);
+    if (d.type === 'arcade-offline-ready') {
+      // game data is stored; now make sure every engine file is in the
+      // service-worker cache too (touch-only files like oly.js would
+      // otherwise never be fetched on desktop, and status could never
+      // show ready). Same-origin fetch => SW caches a copy.
+      ctx.print('caching engine files…');
+      Promise.all(g.engines.map(function (f) {
+        return fetch(g.dir + f).then(function (r) { return r.ok; }).catch(function () { return false; });
+      })).then(function () { finish(true); });
+    }
     else if (d.type === 'arcade-offline-failed') finish(false, d.error);
   }
   window.addEventListener('message', onMsg);
@@ -1028,7 +1037,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 14; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 15; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
