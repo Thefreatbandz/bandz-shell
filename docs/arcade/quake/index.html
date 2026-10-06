@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>QUAKE · Bandz Arcade</title>
+<style>
+:root { --bg:#0d0d0f; --fg:#e8c15a; --dim:#8a743f; }
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; background:var(--bg); color:var(--fg);
+  font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+#wrap { display:flex; flex-direction:column; height:100dvh; }
+header { display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-bottom:1px solid var(--dim); font-size:14px; }
+header a { color:var(--fg); text-decoration:none; border:1px solid var(--dim);
+  border-radius:8px; padding:6px 12px; }
+#stage { flex:1; display:flex; align-items:center; justify-content:center; position:relative; min-height:0; }
+#loader { text-align:center; color:var(--dim); font-size:14px; line-height:2; padding:0 20px; }
+#loader .spin { font-size:28px; animation:spin 1s linear infinite; display:inline-block; }
+@keyframes spin { to { transform:rotate(360deg); } }
+#bar { width:220px; height:6px; border:1px solid var(--dim); border-radius:3px; margin:10px auto 0; overflow:hidden; }
+#barfill { height:100%; width:0%; background:var(--fg); }
+canvas { display:none; background:#000; outline:none; max-width:100%; max-height:100%; }
+canvas.on { display:block; }
+#hint { padding:8px; text-align:center; font-size:12px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header><span>▸ QUAKE <span style="color:var(--dim)">· bandz arcade · shareware</span> <span id="padstat" style="display:none;color:var(--dim)"></span></span><a href="javascript:history.back()">✕ close</a></header>
+  <div id="stage">
+    <div id="loader"><span class="spin">◌</span><br><span id="loadmsg">warming up…</span><div id="bar" style="display:none"><div id="barfill"></div></div></div>
+    <canvas id="canvas" tabindex="0"></canvas>
+  </div>
+  <div id="hint">desktop: WASD + mouse (click canvas to lock) · phone: touch controls · controller supported 🎮</div>
+</div>
+<script src="pad.js"></script>
+<script src="jszip.min.js"></script>
+<script src="lha.js"></script>
+<script>
+var loadmsg = document.getElementById('loadmsg');
+var bar = document.getElementById('bar'), barfill = document.getElementById('barfill');
+function setStatus(t) { if (t) loadmsg.textContent = String(t).replace(/<[^>]*>/g, ''); }
+function setProgress(pct) {
+  bar.style.display = pct == null ? 'none' : '';
+  if (pct != null) barfill.style.width = Math.round(pct * 100) + '%';
+}
+// Quake shareware: id Software allows redistribution of the ORIGINAL quake106.zip.
+// We download it at runtime and extract pak0.pak client-side — never bundled, never re-hosted.
+var MIRRORS = [
+  'https://www.gamers.org/pub/idgames/idstuff/quake/quake106.zip',
+  'https://raw.githubusercontent.com/Jason2Brownlee/QuakeOfficialArchive/main/bin/quake106.zip',
+  'https://raw.githubusercontent.com/Jason2Brownlee/QuakeOfficialArchive/master/bin/quake106.zip'
+];
+function fetchWithProgress(url) {
+  return new Promise(function (resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onprogress = function (e) {
+      if (e.lengthComputable) setProgress(e.loaded / e.total);
+    };
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+      else reject(new Error('HTTP ' + xhr.status));
+    };
+    xhr.onerror = function () { reject(new Error('network error')); };
+    xhr.send();
+  });
+}
+function tryMirrors(i) {
+  i = i || 0;
+  if (i >= MIRRORS.length) throw new Error('all mirrors failed');
+  setStatus('downloading shareware episode… (mirror ' + (i + 1) + '/' + MIRRORS.length + ')');
+  setProgress(0);
+  return fetchWithProgress(MIRRORS[i]).catch(function (e) {
+    console.info('quake mirror failed:', MIRRORS[i], e.message);
+    return tryMirrors(i + 1);
+  });
+}
+var AUTOEXEC = [
+// bandz arcade defaults — WASD + mouse look, touch/gamepad friendly
+'bind w +forward', 'bind s +back', 'bind a +moveleft', 'bind d +moveright',
+'bind UPARROW +forward', 'bind DOWNARROW +back',
+'bind LEFTARROW +left', 'bind RIGHTARROW +right',
+'bind SPACE +jump', 'bind CTRL +attack',
+'bind MOUSE1 +attack', 'bind MOUSE2 +jump',
+'bind SHIFT +speed', '+mlook', 'sensitivity 5', ''
+].join('\n');
+function indexOfBytes(hay, needle, from) {
+  outer: for (var i = from || 0; i <= hay.length - needle.length; i++) {
+    for (var j = 0; j < needle.length; j++) {
+      if (hay[i + j] !== needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+// resource.1 is an LHA *self-extracting* archive: a DOS stub with the LHA
+// data appended. We scan for the first LHA method marker to find where the
+// archive actually starts, then unpack just the PAK0.PAK entry.
+function extractPak(sfx) {
+  var markers = ['-lh5-', '-lh4-', '-lh6-', '-lh7-', '-lh1-', '-lh0-', '-lhd-'];
+  var candidates = [];
+  for (var m = 0; m < markers.length; m++) {
+    var needle = [];
+    for (var k = 0; k < 5; k++) needle.push(markers[m].charCodeAt(k));
+    var pos = 0;
+    while (true) {
+      pos = indexOfBytes(sfx, needle, pos);
+      if (pos < 0) break;
+      candidates.push(pos - 2); // LHA header starts 2 bytes before the method
+      pos += 5;
+    }
+  }
+  candidates.sort(function (a, b) { return a - b; });
+  var lastErr = null;
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i] < 0) continue;
+    try {
+      var entries = LHA.read(sfx.subarray(candidates[i]));
+      for (var j = 0; j < entries.length; j++) {
+        if (/pak0\.pak$/i.test(entries[j].name)) return LHA.unpack(entries[j]);
+      }
+      lastErr = new Error('pak0.pak not found in installer');
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('could not parse installer');
+}
+function start() {
+  tryMirrors().then(function (buf) {
+    setStatus('opening quake106.zip…');
+    setProgress(null);
+    return JSZip.loadAsync(buf);
+  }).then(function (zip) {
+    var f = zip.file('resource.1');
+    if (!f) throw new Error('resource.1 missing from quake106.zip');
+    setStatus('extracting installer…');
+    return f.async('uint8array');
+  }).then(function (sfx) {
+    setStatus('extracting pak0.pak… (one-time, ~20s on phone)');
+    // let the loader paint before the heavy unpack blocks the thread
+    return new Promise(function (resolve, reject) {
+      setTimeout(function () {
+        try { resolve(extractPak(sfx)); }
+        catch (e) { reject(e); }
+      }, 60);
+    });
+  }).then(function (pak) {
+    window.pakData = pak;
+    boot();
+  }).catch(function (e) {
+    setStatus('couldn\'t load Quake: ' + e.message + ' — tap to retry');
+    setProgress(null);
+    document.getElementById('loader').style.cursor = 'pointer';
+    document.getElementById('loader').onclick = function () {
+      document.getElementById('loader').onclick = null;
+      document.getElementById('loader').style.cursor = '';
+      start();
+    };
+  });
+}
+function boot() {
+  setStatus('starting engine…');
+  window.Module = {
+    canvas: document.getElementById('canvas'),
+    setStatus: setStatus,
+    onRuntimeInitialized: function () {
+      try { FS.mkdir('/id1'); } catch (e) {}
+      var data = window.pakData;
+      var f = FS.open('/id1/pak0.pak', 'w');
+      FS.write(f, data, 0, data.length, 0);
+      FS.close(f);
+      var cfg = new TextEncoder().encode(AUTOEXEC);
+      var c = FS.open('/id1/autoexec.cfg', 'w');
+      FS.write(c, cfg, 0, cfg.length, 0);
+      FS.close(c);
+      document.getElementById('loader').style.display = 'none';
+      var cv = document.getElementById('canvas');
+      cv.classList.add('on');
+      cv.focus();
+    }
+  };
+  var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (isTouch) {
+    var oly = document.createElement('script');
+    oly.src = 'oly.js';
+    oly.onload = function () {
+      try {
+        olySetup({
+          'Escape': { lbl: '≡' }, 'Enter': { lbl: '⏎', pos: [15, 0] },
+          'KeyW': { lbl: 'W', anc: 'B', pos: [18, 36], shape: 'U' },
+          'KeyS': { lbl: 'S', anc: 'B', pos: [18, 0], shape: 'D' },
+          'KeyA': { lbl: 'A', anc: 'B', pos: [0, 18], shape: 'L' },
+          'KeyD': { lbl: 'D', anc: 'B', pos: [36, 18], shape: 'R' },
+          'ArrowLeft': { lbl: '◀', anc: 'RB', pos: [28, 58] },
+          'ArrowRight': { lbl: '▶', anc: 'RB', pos: [2, 58] },
+          'MBtn0': { lbl: '✸', anc: 'RB', pos: [0, 10] },
+          'Space': { lbl: '○', anc: 'RB', pos: [20, 10] }
+        }, 3);
+        if (typeof olyOn === 'function') olyOn();
+      } catch (e) { console.info('touch controls skipped', e); }
+      bootWasm();
+    };
+    oly.onerror = bootWasm;
+    document.body.appendChild(oly);
+  } else {
+    // desktop: click canvas for pointer-lock mouse look
+    document.getElementById('canvas').addEventListener('click', function () {
+      this.focus();
+      if (this.requestPointerLock) {
+        try { this.requestPointerLock(); } catch (e) {}
+      }
+    });
+    bootWasm();
+  }
+}
+function bootWasm() {
+  var s = document.createElement('script');
+  s.src = 'index.js';
+  document.body.appendChild(s);
+}
+start();
+</script>
+</body>
+</html>
