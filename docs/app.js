@@ -260,7 +260,7 @@ defineCommand({
     const groups = {
       'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt', 'install', 'guide'],
       'you': ['stackz', 'games', 'desk', 'note', 'notes', 'todo', 'todos', 'done', 'ideas', 'idea', 'weather', 'pomodoro', 'slate'],
-      'web': ['browse', 'html', 'cpp'],
+      'web': ['browse', 'watch', 'html', 'cpp'],
       'studio': ['studio', 'newgame', 'edit', 'run', 'ship', 'showcase', 'export', 'import'],
       'arcade': ['dungeon', 'play', 'doom', 'halo', 'fortune'],
       'fun': ['sudo', 'whoami', 'date', 'echo'],
@@ -1493,5 +1493,49 @@ defineCommand({
   }
 });
 ARG_HINTS.guide = () => Object.keys(GUIDE_TOPICS).concat(['tip']);
+
+/* ================= WATCH — video in the terminal ================= */
+function ytId(u) {
+  u = u.trim();
+  const m = u.match(/(?:youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (m) return m[1];
+  if (/^[A-Za-z0-9_-]{11}$/.test(u)) return u;
+  return null;
+}
+defineCommand({
+  name: 'watch',
+  help: 'watch <youtube link | .mp4> — play video here',
+  explain: 'YouTube links play right in the terminal (YouTube allows embedding). Netflix & co. block embedding — use the ↗ safari button for those.',
+  run(args, ctx) {
+    const raw = args.join(' ').trim();
+    if (!raw) { ctx.print('watch what? <span class="dim">e.g. watch https://youtu.be/dQw4w9WgXcQ</span>'); return; }
+    const id = ytId(raw);
+    if (id) {
+      const f = $('browserframe');
+      f.removeAttribute('srcdoc');
+      f.src = 'https://www.youtube-nocookie.com/embed/' + id + '?rel=0&playsinline=1';
+      $('urlbar').value = '▶ youtube: ' + id;
+      $('browser').classList.add('open');
+      ctx.print('loading the video… <span class="dim">(✕ closes the pane)</span>');
+      blip(880, 0.07);
+      return;
+    }
+    if (/\.(mp4|webm|mov)(\?|#|$)/i.test(raw)) {
+      let u = raw;
+      if (!/^[a-z]+:\/\//i.test(u)) u = 'https://' + u;
+      const f = $('browserframe');
+      f.removeAttribute('src');
+      f.srcdoc = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<style>html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center}video{width:100%;max-height:100%}</style></head>' +
+        '<body><video src="' + esc(u) + '" controls playsinline autoplay></video></body></html>';
+      $('urlbar').value = '▶ video file';
+      $('browser').classList.add('open');
+      ctx.print('loading the video… <span class="dim">(✕ closes the pane)</span>');
+      blip(880, 0.07);
+      return;
+    }
+    ctx.print('I can play <b>YouTube</b> links and direct video files (.mp4) right here.<br><span class="dim">Netflix / Hulu / Disney+ block embedding — `browse` them and use the ↗ safari button.</span>');
+  }
+});
 
 })();
