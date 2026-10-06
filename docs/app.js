@@ -607,12 +607,15 @@ defineCommand({
 /* ---- halo (link, never bundled) ---- */
 defineCommand({
   name: 'halo',
-  help: 'halo — the browser Halo port (external link)',
-  explain: 'Opens the fan-made Halo: CE browser port. We link it, we don\'t ship it — its hosting moves around.',
+  help: 'halo — the Halo: CE browser port (needs your own disc)',
+  explain: 'Opens the fan-made Halo: CE browser port. Unofficial — we link it, never bundle it. You supply your own Xbox disc rip.',
   run(args, ctx) {
-    ctx.print('The Halo browser port is a fan project — its link moves around as hosts change.<br>' +
-      '<span class="dim">Ask bands for today\'s working link, or search "Halo CE browser WebAssembly".<br>' +
-      'Full campaign + multiplayer, no install. Unofficial, so we link it — never bundle it.</span>');
+    ctx.print('HALO: COMBAT EVOLVED — in a browser tab. <span class="dim">Fan port of the original Xbox game, rebuilt for WebAssembly.</span><br>' +
+      'The catch: it can\'t run inside this terminal — tap the <b>↗ safari</b> button up top for a real tab.<br>' +
+      'And it needs <b>your own disc</b>: you rip an XISO from your Xbox copy of Halo: CE and pick the file when it asks. No disc, no game — Microsoft\'s assets, their rules.<br>' +
+      '<span class="dim">Desktop browser = the real experience. On iPhone it loads but plays rough — the dev says so himself.<br>' +
+      'Unofficial project, could vanish any day. Opening…</span>');
+    browserGo('https://mitchellhynes.com/halo/halo.html');
   }
 });
 
@@ -914,7 +917,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 10; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 11; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
