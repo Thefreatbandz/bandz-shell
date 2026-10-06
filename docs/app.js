@@ -258,7 +258,7 @@ defineCommand({
   explain: 'Lists every command the shell knows. Start here whenever you are lost.',
   run(args, ctx) {
     const groups = {
-      'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt', 'install'],
+      'shell': ['help', 'about', 'theme', 'clear', 'explain', 'why', 'learn', 'alias', 'crt', 'install', 'guide'],
       'you': ['stackz', 'games', 'desk', 'note', 'notes', 'todo', 'todos', 'done', 'ideas', 'idea', 'weather', 'pomodoro', 'slate'],
       'web': ['browse', 'html', 'cpp'],
       'studio': ['studio', 'newgame', 'edit', 'run', 'ship', 'showcase', 'export', 'import'],
@@ -872,7 +872,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 7; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 8; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
@@ -1328,6 +1328,7 @@ defineCommand({
     }
     const fname = 'bandz-' + name + '.html';
     ctx.print('packaging <b>' + esc(name) + '</b>…');
+    try { storeSet('bs_shipped', '1'); } catch (e) {}
     shareFile(fname, g.code, 'text/html', name).then((shared) => {
       if (!shared) {
         if (!downloadFile(fname, g.code, 'text/html')) { ctx.print('couldn\'t make the file on this browser.', 'dim'); return; }
@@ -1414,5 +1415,83 @@ defineCommand({
     inp.click();
   }
 });
+
+/* ================= LIL G — your terminal guide ================= */
+const GUIDE_TOPICS = {
+  start: { t: 'where do I start?', b: 'You already did — you\'re here. The fastest path: <b>newgame doomlike</b> → <b>edit</b> it (live preview shows your changes) → <b>guide loop</b> when you hit code you don\'t get → <b>ship</b> it when it\'s yours. That\'s the whole dev loop.' },
+  variable: { t: 'variables', b: 'A variable is a labeled box. <b>let hp = 100</b> makes a box called hp holding 100. Change it: <b>hp = hp - 10</b>. In your raycaster, search LEARN comments for <b>let</b> — every setting is a variable you can tweak live.' },
+  loop: { t: 'loops', b: 'A loop repeats code. <b>for (let i = 0; i < 10; i++)</b> runs 10 times. Your dungeon map is drawn with a loop — one loop per row, one per column. Try in <b>html</b>: <b>&lt;script&gt;for(let i=0;i<5;i++)document.write("yo "+i+"&lt;br&gt;")&lt;/script&gt;</b>' },
+  function: { t: 'functions', b: 'A function is a reusable recipe. <b>function shoot() { ... }</b> defines it, <b>shoot()</b> runs it. The raycaster is built from functions: one casts rays, one draws walls, one moves enemies. Read them top to bottom — each LEARN comment says what its function cooks.' },
+  array: { t: 'arrays', b: 'An array is a list. <b>let inv = ["sword", "potion"]</b>. Grab items: <b>inv[0]</b> is "sword". Your dungeon\'s goblins live in an array — the game loops it to move every goblin each turn.' },
+  if: { t: 'if statements', b: '<b>if (hp &lt;= 0) { die() }</b> — do something only when a condition is true. Games are mostly ifs: if player hits wall, stop. If bullet hits enemy, damage. Open your raycaster and count the ifs — you\'ll see the game thinking.' },
+  raycaster: { t: 'how the raycaster works', b: 'For every vertical slice of your screen, it shoots an invisible ray into the map until it hits a wall. Close wall = tall slice, far wall = short slice. That\'s the whole 3D trick DOOM used in 1993 — and your template has it in ~100 lines with LEARN comments.' },
+  sprite: { t: 'sprites', b: 'A sprite is a 2D image in a 3D-ish world — your raycaster\'s enemies are sprites. They get bigger as you get closer (same math as the walls). Change the enemy emoji/color in the template and watch them change live.' },
+  map: { t: 'game maps', b: 'Your raycaster map is just text: <b>#</b> = wall, <b>.</b> = floor. Draw a new shape with # and . in the MAP variable and the level rebuilds instantly in the live preview. Level design is typing.' },
+  ship: { t: 'shipping your game', b: '<b>ship &lt;game&gt;</b> packages it into one file → share sheet → send it to bands in chat → I put it live at <b>thefreatbandz.github.io/bandz-shell/showcase/&lt;game&gt;/</b>. That link is your portfolio. <b>showcase</b> lists everything you\'ve shipped.' },
+  portfolio: { t: 'building your portfolio', b: 'A portfolio is proof you can build. Every game you <b>ship</b> becomes a link. 3-4 shipped games + this terminal itself = a real junior-dev portfolio. Quality over quantity — one polished raycaster remix beats five half-done ones.' },
+  backup: { t: 'backing up', b: 'Your stuff lives in the phone\'s browser storage — iOS can wipe it. <b>export</b> downloads everything (games + desk) to a file. Do it after every real work session. <b>import</b> brings it back.' },
+  doom: { t: 'doom', b: '<b>doom</b> launches DOOM (Freedoom — free and legal). Touch controls on phone, WASD + mouse on desktop, controller if you pair one. <b>play</b> shows the arcade shelf.' },
+  dungeon: { t: 'dungeon', b: 'Our original roguelike. WASD/arrows/swipe to move, walk into goblins to fight, grab <b>*</b> gold, find the <b>&gt;</b> stairs. <b>dungeon daily</b> = same seed all day. q quits. Permadeath — make it count.' },
+  stackz: { t: 'stackz', b: 'Your paper-trading command center. The bot paper-trades toward 100 closed trades before real money is even a question. <b>stackz</b> shows the scoreboard — win rate, P&amp;L, open positions.' },
+  desk: { t: 'desk', b: 'Your mini-computer: notes, todos, ideas in one place with tabs and search. Quick-add from the terminal: <b>note</b>, <b>todo</b>, <b>idea</b>. <b>export desk</b> backs it up.' },
+  theme: { t: 'themes', b: '<b>theme</b> lists them: gold, matrix, amber, vapor, corrosion. <b>theme matrix</b> switches. Your pick sticks — it saves on the phone.' },
+  controller: { t: 'controller', b: 'Pair any Bluetooth controller (Xbox/PS) in iPhone Settings → Bluetooth, then open <b>doom</b>. Left stick moves, right stick turns, RT/A fires, LB/B uses, Start = enter. A 🎮 badge shows up top when it connects.' },
+};
+const GUIDE_TIPS = [
+  'Tab finishes your command. The popup above the keyboard guesses what you\'re typing — tap it.',
+  'Stuck? <b>why</b> explains your last error in plain words.',
+  'Every LEARN comment in the raycaster is a mini-lesson. Read them while the live preview runs.',
+  'Change ONE number at a time in your game, watch the preview, then change the next. That\'s debugging.',
+  '<b>export</b> after every real session. Future you says thanks.',
+  'The dungeon daily seed is the same all day — race yourself.',
+  'Type <b>guide loop</b>, <b>guide variable</b>, <b>guide function</b> — tiny coding lessons, right here.',
+  '<b>ship</b> early, <b>ship</b> often. A portfolio is just shipped things.',
+  'Your terminal learns your habits — past commands show up in the suggestion popup.',
+  'CRT mode (<b>crt on</b>) is pure vibes. Try it with matrix theme.',
+  'Got a controller? Pair it in Settings → Bluetooth, then <b>doom</b>.',
+  'The map in your raycaster is just text. Draw with # and . — you\'re level designing.',
+];
+function guideBrief(ctx) {
+  const mine = myGames();
+  const shipped = storeGet('bs_shipped') === '1';
+  let next;
+  if (!mine.length) next = 'you haven\'t cooked a game yet — <b>newgame doomlike</b> is the move. I\'ll explain the code with you.';
+  else if (!shipped) next = 'you\'ve got <b>' + mine.length + '</b> game' + (mine.length === 1 ? '' : 's') + ' — <b>ship ' + esc(mine[0]) + '</b> turns it into a file you can send anyone.';
+  else next = 'portfolio\'s started. Next: remix the raycaster into something that\'s <i>yours</i> — new map, new colors, then <b>ship</b> it.';
+  const tip = GUIDE_TIPS[(Math.random() * GUIDE_TIPS.length) | 0];
+  ctx.print(
+    '<span class="accent">  .-.</span><br>' +
+    '<span class="accent">  |o o|</span>  <b>lil g</b> <span class="dim">— your terminal homie</span><br>' +
+    '<span class="accent">  |_-_|</span>  xp <b>' + S.xp + '</b> · ' + mine.length + ' game' + (mine.length === 1 ? '' : 's') + ' cooking<br><br>' +
+    'next up: ' + next + '<br><br>' +
+    '<span class="dim">tip: ' + tip + '<br>ask me stuff: `guide loop` · `guide ship` · `guide doom` · `guide tip`</span>');
+}
+defineCommand({
+  name: 'guide', aliases: ['g'],
+  help: 'guide [topic] — ask lil g',
+  explain: 'Lil g is your built-in guide — next steps, coding lessons, and answers about the terminal. No signal needed, he lives here.',
+  run(args, ctx) {
+    const q = args.join(' ').toLowerCase().trim();
+    if (!q) { guideBrief(ctx); return; }
+    if (q === 'tip' || q === 'tips') {
+      ctx.print('<b>lil g tip:</b> ' + GUIDE_TIPS[(Math.random() * GUIDE_TIPS.length) | 0]);
+      return;
+    }
+    // fuzzy topic match
+    let best = null, bk = '';
+    Object.keys(GUIDE_TOPICS).forEach((k) => {
+      if (q === k || q.indexOf(k) === 0 || k.indexOf(q) === 0) { if (k.length > bk.length) { best = GUIDE_TOPICS[k]; bk = k; } }
+    });
+    if (!best) {
+      // maybe they asked about a command — point at explain
+      if (Commands[q]) { ctx.print('<b>lil g:</b> that\'s a command — <b>explain ' + esc(q) + '</b> breaks it down for you.'); return; }
+      ctx.print('<b>lil g:</b> hmm, I don\'t know about "' + esc(q) + '" yet. Try: ' + Object.keys(GUIDE_TOPICS).slice(0, 8).map(esc).join(', ') + '…<br><span class="dim">or just `guide` for the briefing.</span>');
+      return;
+    }
+    ctx.print('<b>lil g on ' + esc(best.t) + ':</b><br>' + best.b);
+    if (Math.random() < 0.35) S.xp = (S.xp || 0) + 1;
+  }
+});
+ARG_HINTS.guide = () => Object.keys(GUIDE_TOPICS).concat(['tip']);
 
 })();
