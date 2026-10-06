@@ -1,0 +1,29 @@
+/* oly.css — on-screen touch controls for the Bandz Arcade (DOOM) */
+#olyCtr {
+  position: fixed; left: 0; top: 0; width: 100%; height: 100%;
+  z-index: 60; display: none; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  pointer-events: auto;
+}
+.olyBtn {
+  position: absolute; width: 68px; height: 68px; margin: -34px 0 0 -34px;
+  border-radius: 50%;
+  background: rgba(232, 193, 90, .12);
+  border: 2px solid rgba(232, 193, 90, .55);
+  color: #e8c15a;
+  display: flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 22px; font-weight: bold;
+  text-shadow: 0 0 8px rgba(232, 193, 90, .8);
+}
+.olyBtnPress { background: rgba(232, 193, 90, .42); border-color: #ffe9a8; }
+.olyShp { border-radius: 16px; width: 62px; height: 62px; margin: -31px 0 0 -31px; }
+.olyShpU { border-radius: 20px 20px 8px 8px; }
+.olyShpD { border-radius: 8px 8px 20px 20px; }
+.olyShpL { border-radius: 20px 8px 8px 20px; }
+.olyShpR { border-radius: 8px 20px 20px 8px; }
+/* analog look-area hints */
+.olyArr { position: absolute; color: rgba(232, 193, 90, .30); font-size: 26px; }
+.olyArrU { left: 50%; top: 36%; } .olyArrD { left: 50%; top: 60%; }
+.olyArrL { left: 40%; top: 48%; } .olyArrR { left: 60%; top: 48%; }
+.olyTLHan, .olyTLHan * { cursor: none; }

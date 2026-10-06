@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>DUKE NUKEM 3D · Bandz Arcade</title>
+<style>
+:root { --bg:#0d0d0f; --fg:#e8c15a; --dim:#8a743f; }
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; background:var(--bg); color:var(--fg);
+  font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+#wrap { display:flex; flex-direction:column; height:100dvh; }
+header { display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-bottom:1px solid var(--dim); font-size:14px; }
+header a { color:var(--fg); text-decoration:none; border:1px solid var(--dim);
+  border-radius:8px; padding:6px 12px; }
+#stage { flex:1; display:flex; align-items:center; justify-content:center; position:relative; min-height:0; }
+#loader { text-align:center; color:var(--dim); font-size:14px; line-height:2; padding:0 20px; }
+#loader .spin { font-size:28px; animation:spin 1s linear infinite; display:inline-block; }
+@keyframes spin { to { transform:rotate(360deg); } }
+#bar { width:220px; height:6px; border:1px solid var(--dim); border-radius:3px; margin:10px auto 0; overflow:hidden; }
+#barfill { height:100%; width:0%; background:var(--fg); }
+canvas { display:none; background:#000; outline:none; max-width:100%; max-height:100%; }
+canvas.on { display:block; }
+#hint { padding:8px; text-align:center; font-size:12px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header><span>▸ DUKE NUKEM 3D <span style="color:var(--dim)">· bandz arcade · shareware</span> <span id="padstat" style="display:none;color:var(--dim)"></span></span><a href="javascript:history.back()">✕ close</a></header>
+  <div id="stage">
+    <div id="loader"><span class="spin">◌</span><br><span id="loadmsg">warming up…</span><div id="bar" style="display:none"><div id="barfill"></div></div></div>
+    <canvas id="canvas" tabindex="0"></canvas>
+  </div>
+  <div id="hint">desktop: WASD + arrows · phone: touch controls · controller supported 🎮</div>
+</div>
+<script src="pad.js"></script>
+<script src="jszip.min.js"></script>
+<script>
+var loadmsg = document.getElementById('loadmsg');
+var bar = document.getElementById('bar'), barfill = document.getElementById('barfill');
+function setStatus(t) { if (t) loadmsg.textContent = String(t).replace(/<[^>]*>/g, ''); }
+function setProgress(pct) {
+  bar.style.display = pct == null ? 'none' : '';
+  if (pct != null) barfill.style.width = Math.round(pct * 100) + '%';
+}
+// Duke3D shareware: 3D Realms allows redistribution of the ORIGINAL 3dduke13.zip.
+// We download it at runtime and extract DUKE3D.GRP client-side — never bundled, never re-hosted.
+var MIRRORS = [
+  'https://archive.org/download/3dduke13/3dduke13.zip'
+];
+var EXPECTED_GRP_SIZE = 11035779; // shareware DUKE3D.GRP 1.3D
+function fetchWithProgress(url) {
+  return new Promise(function (resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onprogress = function (e) {
+      if (e.lengthComputable) setProgress(e.loaded / e.total);
+    };
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+      else reject(new Error('HTTP ' + xhr.status));
+    };
+    xhr.onerror = function () { reject(new Error('network error')); };
+    xhr.send();
+  });
+}
+function tryMirrors(i) {
+  i = i || 0;
+  if (i >= MIRRORS.length) throw new Error('download failed — check connection');
+  setStatus('downloading shareware episode…');
+  setProgress(0);
+  return fetchWithProgress(MIRRORS[i]).catch(function (e) {
+    console.info('duke mirror failed:', MIRRORS[i], e.message);
+    return tryMirrors(i + 1);
+  });
+}
+function start() {
+  tryMirrors().then(function (buf) {
+    setStatus('opening 3dduke13.zip…');
+    setProgress(null);
+    return JSZip.loadAsync(buf);
+  }).then(function (zip) {
+    // the shareware zip contains a nested DN3DSW13.SHR zip with the GRP inside
+    var inner = null;
+    var names = Object.keys(zip.files);
+    for (var n = 0; n < names.length; n++) {
+      if (/dn3dsw13\.shr$/i.test(names[n])) { inner = names[n]; break; }
+    }
+    if (!inner) throw new Error('installer not found in 3dduke13.zip');
+    setStatus('extracting installer…');
+    return zip.file(inner).async('uint8array');
+  }).then(function (shr) {
+    setStatus('extracting DUKE3D.GRP…');
+    return JSZip.loadAsync(shr);
+  }).then(function (zip2) {
+    var grp = null;
+    var names = Object.keys(zip2.files);
+    for (var n = 0; n < names.length; n++) {
+      if (/duke3d\.grp$/i.test(names[n])) { grp = names[n]; break; }
+    }
+    if (!grp) throw new Error('DUKE3D.GRP not found in installer');
+    return zip2.file(grp).async('uint8array');
+  }).then(function (data) {
+    if (data.length !== EXPECTED_GRP_SIZE) {
+      throw new Error('game data failed verification (' + data.length + ' bytes)');
+    }
+    window.grpData = data;
+    boot();
+  }).catch(function (e) {
+    setStatus('couldn\'t load Duke: ' + e.message + ' — tap to retry');
+    setProgress(null);
+    document.getElementById('loader').style.cursor = 'pointer';
+    document.getElementById('loader').onclick = function () {
+      document.getElementById('loader').onclick = null;
+      document.getElementById('loader').style.cursor = '';
+      start();
+    };
+  });
+}
+function boot() {
+  setStatus('starting engine…');
+  window.Module = {
+    canvas: document.getElementById('canvas'),
+    setStatus: setStatus,
+    onRuntimeInitialized: function () {
+      // engine scans / for *.grp and IDs the shareware episode by CRC+size
+      var data = window.grpData;
+      var f = FS.open('/DUKE3D.GRP', 'w');
+      FS.write(f, data, 0, data.length, 0);
+      FS.close(f);
+      document.getElementById('loader').style.display = 'none';
+      var cv = document.getElementById('canvas');
+      cv.classList.add('on');
+      cv.focus();
+    }
+  };
+  var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (isTouch) {
+    var oly = document.createElement('script');
+    oly.src = 'oly.js';
+    oly.onload = function () {
+      try {
+        olySetup({
+          'Escape': { lbl: '≡' }, 'Enter': { lbl: '⏎', pos: [15, 0] },
+          'KeyW': { lbl: 'W', anc: 'B', pos: [18, 36], shape: 'U' },
+          'KeyS': { lbl: 'S', anc: 'B', pos: [18, 0], shape: 'D' },
+          'KeyA': { lbl: 'A', anc: 'B', pos: [0, 18], shape: 'L' },
+          'KeyD': { lbl: 'D', anc: 'B', pos: [36, 18], shape: 'R' },
+          'ArrowLeft': { lbl: '◀', anc: 'RB', pos: [28, 58] },
+          'ArrowRight': { lbl: '▶', anc: 'RB', pos: [2, 58] },
+          'ControlRight': { lbl: '✸', anc: 'RB', pos: [0, 10] },
+          'Space': { lbl: '○', anc: 'RB', pos: [20, 10] },
+          'KeyE': { lbl: 'E', anc: 'RB', pos: [42, 10] }
+        }, 3);
+        if (typeof olyOn === 'function') olyOn();
+      } catch (e) { console.info('touch controls skipped', e); }
+      bootWasm();
+    };
+    oly.onerror = bootWasm;
+    document.body.appendChild(oly);
+  } else {
+    document.getElementById('canvas').addEventListener('click', function () {
+      this.focus();
+      if (this.requestPointerLock) {
+        try { this.requestPointerLock(); } catch (e) {}
+      }
+    });
+    bootWasm();
+  }
+}
+function bootWasm() {
+  var s = document.createElement('script');
+  s.src = 'index.js';
+  document.body.appendChild(s);
+}
+start();
+</script>
+</body>
+</html>

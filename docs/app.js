@@ -652,10 +652,16 @@ defineCommand({
       arcadeOpen('QUAKE', 'arcade/quake/');
       return;
     }
+    if (g === 'duke') {
+      ctx.print('launching <b>DUKE NUKEM 3D</b>… <span class="dim">shareware episode · downloads at runtime · touch controls on phone</span>');
+      arcadeOpen('DUKE NUKEM 3D', 'arcade/duke/');
+      return;
+    }
     if (g) { ctx.print('"' + esc(g) + '" isn\'t in the arcade yet. <span class="dim">try: play doom</span>'); return; }
     ctx.print('<b>ARCADE</b><br>' +
       '▸ <b>doom</b> <span class="dim">— playable now · `play doom`</span><br>' +
       '▸ <b>quake</b> <span class="dim">— playable now · `play quake`</span><br>' +
+      '▸ <b>duke</b> <span class="dim">— playable now · `play duke`</span><br>' +
       '· fighters <span class="dim">— emulator + your ROMs</span><br>' +
       '· supertuxkart <span class="dim">— on deck</span><br>' +
       '<span class="dim">meanwhile: `dungeon` is ours and already here.</span>');
@@ -672,6 +678,12 @@ defineCommand({
   help: 'quake — launch QUAKE',
   explain: 'Shortcut for `play quake`. Shareware episode, downloads at runtime, touch controls on your phone.',
   run(args, ctx) { Commands.play.run(['quake'], ctx); }
+});
+defineCommand({
+  name: 'duke',
+  help: 'duke — launch DUKE NUKEM 3D',
+  explain: 'Shortcut for `play duke`. Shareware episode, downloads at runtime, touch controls on your phone.',
+  run(args, ctx) { Commands.play.run(['duke'], ctx); }
 });
 
 /* ---- weather / pomodoro / slate ---- */
@@ -928,7 +940,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 12; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 13; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
