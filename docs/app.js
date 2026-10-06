@@ -696,7 +696,7 @@ var OFFLINE_GAMES = {
   quake: { title: 'QUAKE', dir: 'arcade/quake/', dataKey: 'quake-pak0',
     engines: ['index.html', 'index.js', 'index.wasm', 'index.data', 'oly.js', 'oly.css', 'pad.js', 'jszip.min.js', 'lha.js'] },
   duke: { title: 'DUKE NUKEM 3D', dir: 'arcade/duke/', dataKey: 'duke-grp',
-    engines: ['index.html', 'index.js', 'index.wasm', 'oly.js', 'oly.css', 'pad.js', 'jszip.min.js'] }
+    engines: ['index.html', 'index.js', 'eduke32.wasm', 'oly.js', 'oly.css', 'pad.js', 'jszip.min.js'] }
 };
 function offlineStatus(ctx) {
   ctx.print('<b>OFFLINE MODE</b> <span class="dim">— games on your phone, no wifi needed</span>');
