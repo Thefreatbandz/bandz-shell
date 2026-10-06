@@ -686,6 +686,94 @@ defineCommand({
   run(args, ctx) { Commands.play.run(['duke'], ctx); }
 });
 
+/* ================= OFFLINE MODE =================
+   Arcade games download engines + game data on demand. `offline <game>`
+   pre-loads everything into the service-worker cache (engines) and
+   IndexedDB (game data) so the game boots with no wifi. */
+var OFFLINE_GAMES = {
+  doom: { title: 'DOOM', dir: 'arcade/doom/', dataKey: 'doom-wad',
+    engines: ['index.html', 'index.js', 'index.wasm', 'index.data', 'oly.js', 'oly.css', 'pad.js'] },
+  quake: { title: 'QUAKE', dir: 'arcade/quake/', dataKey: 'quake-pak0',
+    engines: ['index.html', 'index.js', 'index.wasm', 'index.data', 'oly.js', 'oly.css', 'pad.js', 'jszip.min.js', 'lha.js'] },
+  duke: { title: 'DUKE NUKEM 3D', dir: 'arcade/duke/', dataKey: 'duke-grp',
+    engines: ['index.html', 'index.js', 'index.wasm', 'oly.js', 'oly.css', 'pad.js', 'jszip.min.js'] }
+};
+function offlineStatus(ctx) {
+  ctx.print('<b>OFFLINE MODE</b> <span class="dim">— games on your phone, no wifi needed</span>');
+  var jobs = Object.keys(OFFLINE_GAMES).map(function (name) {
+    var g = OFFLINE_GAMES[name];
+    return ArcadeDB.get(g.dataKey + '::meta').then(function (meta) {
+      var engJobs = g.engines.map(function (f) {
+        try { return caches.match(g.dir + f).then(function (r) { return !!r; }).catch(function () { return false; }); }
+        catch (e) { return Promise.resolve(false); }
+      });
+      return Promise.all(engJobs).then(function (hits) {
+        var engOk = hits.length > 0 && hits.every(function (h) { return h; });
+        var ready = !!(meta && engOk);
+        var mb = meta ? (meta.bytes / 1048576).toFixed(1) + ' MB' : '—';
+        var st = ready ? '<b>✓ offline ready</b>'
+          : (meta ? 'data ✓ · <span class="dim">engines missing — play once online</span>'
+          : '<span class="dim">not downloaded</span>');
+        return '▸ <b>' + name + '</b> ' + st + ' <span class="dim">' + mb + '</span>';
+      });
+    });
+  });
+  Promise.all(jobs).then(function (lines) {
+    ctx.print(lines.join('<br>') +
+      '<br><span class="dim">`offline &lt;game&gt;` downloads it · `offline clear` frees the space</span>');
+  });
+}
+function offlineDownload(name, ctx) {
+  var g = OFFLINE_GAMES[name];
+  if (!g) { ctx.print('no such game. <span class="dim">try: ' + Object.keys(OFFLINE_GAMES).join(', ') + '</span>'); return; }
+  ctx.print('downloading <b>' + g.title + '</b> for offline… <span class="dim">keep this tab open</span>');
+  var f = document.createElement('iframe');
+  f.setAttribute('aria-hidden', 'true');
+  f.style.cssText = 'position:fixed;width:4px;height:4px;left:-20px;top:-20px;border:0;visibility:hidden;';
+  var done = false;
+  var to = setTimeout(function () { finish(false, 'timed out — check wifi and retry'); }, 300000);
+  function finish(ok, msg) {
+    if (done) return; done = true;
+    clearTimeout(to);
+    window.removeEventListener('message', onMsg);
+    if (f.parentNode) f.parentNode.removeChild(f);
+    ctx.print(ok ? '✓ <b>' + g.title + '</b> ready for offline play.'
+      : '✗ offline download failed: ' + esc(msg || 'unknown'));
+  }
+  function onMsg(e) {
+    var d = e.data || {};
+    if (!d || d.game !== name) return;
+    if (d.type === 'arcade-offline-ready') finish(true);
+    else if (d.type === 'arcade-offline-failed') finish(false, d.error);
+  }
+  window.addEventListener('message', onMsg);
+  f.src = g.dir + '?offline=1';
+  document.body.appendChild(f);
+}
+function offlineClear(ctx) {
+  var jobs = [];
+  Object.keys(OFFLINE_GAMES).forEach(function (name) {
+    var k = OFFLINE_GAMES[name].dataKey;
+    jobs.push(ArcadeDB.del(k));
+    jobs.push(ArcadeDB.del(k + '::meta'));
+  });
+  Promise.all(jobs).then(function () {
+    ctx.print('offline game data cleared. <span class="dim">engines stay cached — tiny.</span>');
+  });
+}
+defineCommand({
+  name: 'offline',
+  help: 'offline [game|clear] — no-wifi arcade',
+  explain: 'Downloads arcade games to your phone so they play with no wifi. `offline` shows status, `offline doom` downloads DOOM, `offline clear` frees the space.',
+  run(args, ctx) {
+    var a = (args[0] || '').toLowerCase();
+    if (!a) { offlineStatus(ctx); return; }
+    if (a === 'clear') { offlineClear(ctx); return; }
+    if (OFFLINE_GAMES[a]) { offlineDownload(a, ctx); return; }
+    ctx.print('huh? <span class="dim">`offline`, `offline doom|quake|duke`, `offline clear`</span>');
+  }
+});
+
 /* ---- weather / pomodoro / slate ---- */
 defineCommand({
   name: 'weather',
@@ -940,7 +1028,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 13; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 14; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {

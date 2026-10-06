@@ -1,8 +1,10 @@
-/* Bandz Shell service worker — offline PWA for the SHELL only.
-   Game/WASM cores are heavy and stream on demand (never cached).
-   v2: network-first for the shell core so updates actually reach
-   installed phones; cache-first for everything else. */
-const V = 'bandz-shell-v2';
+/* Bandz Shell service worker — offline PWA.
+   Shell core: network-first (updates reach installed phones), cache fallback.
+   Everything else same-origin (arcade engines, pages, libs): cache-first AND
+   cached on fetch — so after one online visit the arcade works with no wifi.
+   Game data itself lives in IndexedDB (see arcade/idb.js), not here.
+   v3: engine-file caching for offline mode. */
+const V = 'bandz-shell-v3';
 const CORE = ['./', 'index.html', 'app.js', 'manifest.json', 'icon.svg', 'stackz.json'];
 const NETWORK_FIRST = ['', 'index.html', 'app.js', 'stackz.json'];
 self.addEventListener('install', (e) => {
@@ -33,7 +35,15 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+  // everything else same-origin: cache-first, and cache a copy on fetch
+  // so arcade engines work offline after one online visit
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).catch(() => caches.match('index.html')))
+    caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => {
+      if (r && r.ok) {
+        const copy = r.clone();
+        caches.open(V).then((c) => c.put(e.request, copy)).catch(() => {});
+      }
+      return r;
+    }).catch(() => caches.match('index.html')))
   );
 });

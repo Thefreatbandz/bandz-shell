@@ -34,21 +34,56 @@ canvas.on { display:block; }
   </div>
   <div id="hint">desktop: WASD + mouse · phone: touch controls · controller supported 🎮 · tap canvas to focus</div>
 </div>
+<script src="../idb.js"></script>
 <script src="pad.js"></script>
 <script>
 var loadmsg = document.getElementById('loadmsg');
 function setStatus(t) { if (t) loadmsg.textContent = t.replace(/<[^>]*>/g, ''); }
-// 1. fetch the WAD first (bundled, free, legal — nobody can take it from us)
-fetch('freedoom1.wad').then(function (r) {
-  if (!r.ok) throw new Error('wad fetch failed');
-  setStatus('loading freedoom…');
-  return r.arrayBuffer();
-}).then(function (buf) {
-  window.wadData = new Uint8Array(buf);
-  boot();
-}).catch(function (e) {
-  setStatus('failed to load game data: ' + e.message);
-});
+// 1. game data: IndexedDB first (offline mode), else download once and store.
+// Freedoom is free and legal — nobody can take it from us.
+var OFFLINE_MODE = /[?&]offline=1/.test(location.search);
+function loadWad() {
+  return ArcadeDB.getBytes('doom-wad').then(function (hit) {
+    if (hit && hit.length > 1000000) {
+      setStatus('loading from offline storage…');
+      return hit;
+    }
+    setStatus('downloading freedoom… (one-time)');
+    return fetch('freedoom1.wad').then(function (r) {
+      if (!r.ok) throw new Error('wad fetch failed');
+      return r.arrayBuffer();
+    }).then(function (buf) {
+      var data = new Uint8Array(buf);
+      setStatus('saving for offline…');
+      return ArcadeDB.set('doom-wad', data).then(function () {
+        return ArcadeDB.set('doom-wad::meta', { bytes: data.length, savedAt: Date.now() });
+      }).then(function () { return data; });
+    });
+  });
+}
+function offlineDone(ok, msg) {
+  try {
+    parent.postMessage({ type: ok ? 'arcade-offline-ready' : 'arcade-offline-failed',
+      game: 'doom', error: msg || '' }, '*');
+  } catch (e) {}
+}
+if (OFFLINE_MODE) {
+  setStatus('preparing offline…');
+  loadWad().then(function () {
+    setStatus('ready for offline play ✓');
+    offlineDone(true);
+  }).catch(function (e) {
+    setStatus('offline prep failed: ' + e.message);
+    offlineDone(false, e.message);
+  });
+} else {
+  loadWad().then(function (data) {
+    window.wadData = data;
+    boot();
+  }).catch(function (e) {
+    setStatus('failed to load game data: ' + e.message);
+  });
+}
 function boot() {
   setStatus('starting engine…');
   window.Module = {

@@ -35,6 +35,7 @@ canvas.on { display:block; }
   </div>
   <div id="hint">desktop: WASD + mouse (click canvas to lock) · phone: touch controls · controller supported 🎮</div>
 </div>
+<script src="../idb.js"></script>
 <script src="pad.js"></script>
 <script src="jszip.min.js"></script>
 <script src="lha.js"></script>
@@ -128,8 +129,18 @@ function extractPak(sfx) {
   }
   throw lastErr || new Error('could not parse installer');
 }
-function start() {
-  tryMirrors().then(function (buf) {
+var OFFLINE_MODE = /[?&]offline=1/.test(location.search);
+var EXPECTED_PAK_SIZE = 18689235;
+function offlineDone(ok, msg) {
+  try {
+    parent.postMessage({ type: ok ? 'arcade-offline-ready' : 'arcade-offline-failed',
+      game: 'quake', error: msg || '' }, '*');
+  } catch (e) {}
+}
+// game data: IndexedDB first (offline mode + instant repeat loads),
+// else download the original shareware zip and extract client-side.
+function downloadPak() {
+  return tryMirrors().then(function (buf) {
     setStatus('opening quake106.zip…');
     setProgress(null);
     return JSZip.loadAsync(buf);
@@ -148,9 +159,34 @@ function start() {
       }, 60);
     });
   }).then(function (pak) {
+    if (pak.length !== EXPECTED_PAK_SIZE) throw new Error('game data failed verification');
+    setStatus('saving for offline…');
+    return ArcadeDB.set('quake-pak0', pak).then(function () {
+      return ArcadeDB.set('quake-pak0::meta', { bytes: pak.length, savedAt: Date.now() });
+    }).then(function () { return pak; });
+  });
+}
+function start() {
+  ArcadeDB.getBytes('quake-pak0').then(function (hit) {
+    if (hit && hit.length === EXPECTED_PAK_SIZE) {
+      setStatus('loading from offline storage…');
+      return hit;
+    }
+    return downloadPak();
+  }).then(function (pak) {
     window.pakData = pak;
+    if (OFFLINE_MODE) {
+      setStatus('ready for offline play ✓');
+      offlineDone(true);
+      return;
+    }
     boot();
   }).catch(function (e) {
+    if (OFFLINE_MODE) {
+      setStatus('offline prep failed: ' + e.message);
+      offlineDone(false, e.message);
+      return;
+    }
     setStatus('couldn\'t load Quake: ' + e.message + ' — tap to retry');
     setProgress(null);
     document.getElementById('loader').style.cursor = 'pointer';

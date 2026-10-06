@@ -35,6 +35,7 @@ canvas.on { display:block; }
   </div>
   <div id="hint">desktop: WASD + arrows · phone: touch controls · controller supported 🎮</div>
 </div>
+<script src="../idb.js"></script>
 <script src="pad.js"></script>
 <script src="jszip.min.js"></script>
 <script>
@@ -80,8 +81,17 @@ function tryMirrors(i) {
     return tryMirrors(i + 1);
   });
 }
-function start() {
-  tryMirrors().then(function (buf) {
+var OFFLINE_MODE = /[?&]offline=1/.test(location.search);
+function offlineDone(ok, msg) {
+  try {
+    parent.postMessage({ type: ok ? 'arcade-offline-ready' : 'arcade-offline-failed',
+      game: 'duke', error: msg || '' }, '*');
+  } catch (e) {}
+}
+// game data: IndexedDB first (offline mode + instant repeat loads),
+// else download the original shareware zip and extract client-side.
+function downloadGrp() {
+  return tryMirrors().then(function (buf) {
     setStatus('opening 3dduke13.zip…');
     setProgress(null);
     return JSZip.loadAsync(buf);
@@ -110,9 +120,33 @@ function start() {
     if (data.length !== EXPECTED_GRP_SIZE) {
       throw new Error('game data failed verification (' + data.length + ' bytes)');
     }
+    setStatus('saving for offline…');
+    return ArcadeDB.set('duke-grp', data).then(function () {
+      return ArcadeDB.set('duke-grp::meta', { bytes: data.length, savedAt: Date.now() });
+    }).then(function () { return data; });
+  });
+}
+function start() {
+  ArcadeDB.getBytes('duke-grp').then(function (hit) {
+    if (hit && hit.length === EXPECTED_GRP_SIZE) {
+      setStatus('loading from offline storage…');
+      return hit;
+    }
+    return downloadGrp();
+  }).then(function (data) {
     window.grpData = data;
+    if (OFFLINE_MODE) {
+      setStatus('ready for offline play ✓');
+      offlineDone(true);
+      return;
+    }
     boot();
   }).catch(function (e) {
+    if (OFFLINE_MODE) {
+      setStatus('offline prep failed: ' + e.message);
+      offlineDone(false, e.message);
+      return;
+    }
     setStatus('couldn\'t load Duke: ' + e.message + ' — tap to retry');
     setProgress(null);
     document.getElementById('loader').style.cursor = 'pointer';
