@@ -25,7 +25,6 @@ const S = {
   histIdx: -1,
   aliases: storeJSON('bs_aliases', {}),
   xp: parseInt(storeGet('bs_xp') || '0', 10),
-  learnIdx: parseInt(storeGet('bs_learn') || '0', 10),
   lastError: null,
   dungeon: null, // active dungeon game state or null
 };
@@ -361,38 +360,81 @@ defineCommand({
   }
 });
 
-/* ---- learn mode: XP missions ---- */
-const MISSIONS = [
-  { text: 'Clear the screen — run: clear', check: (c) => c === 'clear' || c === 'cls', xp: 10 },
-  { text: 'Change your look — run: theme matrix', check: (c) => c.indexOf('theme ') === 0, xp: 10 },
-  { text: 'Ask for help — run: explain stackz', check: (c) => c.indexOf('explain ') === 0, xp: 15 },
-  { text: 'Leave a note — run: note <anything>', check: (c) => c.indexOf('note ') === 0, xp: 15 },
-  { text: 'Enter the dungeon — run: dungeon', check: (c) => c.indexOf('dungeon') === 0, xp: 20 },
-];
+/* ---- learn mode: mission tracks ---- */
+const TRACKS = {
+  basics: { title: 'terminal basics', key: 'bs_learn_basics', missions: [
+    { text: 'Clear the screen — run: clear', check: (c) => c === 'clear' || c === 'cls', xp: 10 },
+    { text: 'Change your look — run: theme matrix', check: (c) => c.indexOf('theme ') === 0, xp: 10 },
+    { text: 'Ask for help — run: explain stackz', check: (c) => c.indexOf('explain ') === 0, xp: 15 },
+    { text: 'Leave a note — run: note <anything>', check: (c) => c.indexOf('note ') === 0, xp: 15 },
+    { text: 'Enter the dungeon — run: dungeon', check: (c) => c.indexOf('dungeon') === 0, xp: 20 },
+  ]},
+  raycaster: { title: 'raycaster builder', key: 'bs_learn_ray', missions: [
+    { text: 'Scaffold your shooter — run: newgame doomlike myfirst', check: (c) => c.indexOf('newgame') === 0, xp: 20 },
+    { text: 'Open the code — run: edit myfirst (watch the live preview appear)', check: (c) => c.indexOf('edit ') === 0, xp: 20 },
+    { text: 'Grade the mood — find GRADE in the code, set fogBlue to 0.8, watch the preview go deep blue. Then: run myfirst', check: (c) => c.indexOf('run ') === 0, xp: 30 },
+    { text: 'Redraw the map — edit MAP with # and . (keep the border solid!). Then: run myfirst', check: (c) => c.indexOf('run ') === 0, xp: 30 },
+    { text: 'Tune the feel — in step(), change sp = 3.2 to 6.0 (speed!) or ts = 2.4 to 5.0 (spin!). Then: run myfirst', check: (c) => c.indexOf('run ') === 0, xp: 30 },
+    { text: 'Ship it — run: ship myfirst, then send the file to bands for your portfolio link', check: (c) => c.indexOf('ship ') === 0, xp: 50 },
+  ]},
+  web: { title: 'website builder', key: 'bs_learn_web', missions: [
+    { text: 'Render your first page — run: html <h1>yo</h1>', check: (c) => c.indexOf('html ') === 0, xp: 15 },
+    { text: 'Style it gold — run: html <h1 style="color:gold">yo</h1>', check: (c) => c.indexOf('html ') === 0, xp: 15 },
+    { text: 'Add a button — run: html <button>tap me</button>', check: (c) => c.indexOf('html ') === 0, xp: 15 },
+    { text: 'Mini profile page — a heading, a paragraph, and a link, all in one html command', check: (c) => c.indexOf('html ') === 0, xp: 25 },
+    { text: 'Booking card — a barbershop card: shop name, a service, a price, a book button', check: (c) => c.indexOf('html ') === 0, xp: 30 },
+  ]},
+};
+function trackIdx(t) {
+  let v = storeGet(TRACKS[t].key);
+  if (v == null && t === 'basics') v = storeGet('bs_learn'); // migrate old progress
+  return parseInt(v || '0', 10);
+}
+function activeTrack() { return storeGet('bs_track') || 'basics'; }
 function checkLearn(raw) {
-  const m = MISSIONS[S.learnIdx];
+  const t = activeTrack(), T = TRACKS[t] || TRACKS.basics;
+  const i = trackIdx(t), m = T.missions[i];
   if (!m) return;
   if (m.check(raw.trim().toLowerCase())) {
     S.xp += m.xp;
     storeSet('bs_xp', String(S.xp));
-    S.learnIdx++;
-    storeSet('bs_learn', String(S.learnIdx));
+    storeSet(T.key, String(i + 1));
     print('✓ mission complete <span class="dim">+' + m.xp + ' XP</span> → total <b>' + S.xp + ' XP</b>', 'accent');
-    const next = MISSIONS[S.learnIdx];
-    if (next) print('next mission: <b>' + esc(next.text) + '</b> <span class="dim">(learn)</span>');
-    else print('<b>All missions complete.</b> You are officially dangerous. 🏆', 'accent');
+    const next = T.missions[i + 1];
+    if (next) print('next: <b>' + esc(next.text) + '</b> <span class="dim">(learn)</span>');
+    else {
+      print('<b>' + esc(T.title) + ' track complete.</b> 🏆', 'accent');
+      const others = Object.keys(TRACKS).filter((k) => k !== t && trackIdx(k) < TRACKS[k].missions.length);
+      if (others.length) print('<span class="dim">next track: learn ' + others[0] + ' — ' + esc(TRACKS[others[0]].title) + '</span>');
+      else print('<span class="dim">every track complete. You are officially dangerous.</span>');
+    }
     blip(990, 0.12);
   }
 }
 defineCommand({
   name: 'learn',
-  help: 'learn — coding missions with XP',
-  explain: 'Daily missions that teach you the shell. Finish them, earn XP, get dangerous.',
+  help: 'learn [track] — missions with XP',
+  explain: 'Mission tracks: terminal basics, raycaster builder, website builder. Finish them, earn XP, get dangerous.',
   run(args, ctx) {
-    const m = MISSIONS[S.learnIdx];
-    ctx.print('<b>LEARN MODE</b> <span class="dim">· ' + S.xp + ' XP</span>');
-    if (!m) { ctx.print('All missions complete. You are officially dangerous. 🏆', 'accent'); return; }
-    ctx.print('mission ' + (S.learnIdx + 1) + '/' + MISSIONS.length + ': <b>' + esc(m.text) + '</b> <span class="dim">+' + m.xp + ' XP</span>');
+    const want = (args[0] || '').toLowerCase();
+    if (want && TRACKS[want]) {
+      storeSet('bs_track', want);
+      const T = TRACKS[want], i = trackIdx(want), m = T.missions[i];
+      ctx.print('<b>LEARN</b> <span class="dim">· now on ' + esc(T.title) + ' · ' + S.xp + ' XP</span>');
+      if (m) ctx.print('mission ' + (i + 1) + '/' + T.missions.length + ': <b>' + esc(m.text) + '</b> <span class="dim">+' + m.xp + ' XP</span>');
+      else ctx.print('track complete 🏆 <span class="dim">pick another track below</span>');
+    } else {
+      ctx.print('<b>LEARN MODE</b> <span class="dim">· ' + S.xp + ' XP</span>');
+    }
+    Object.keys(TRACKS).forEach((k) => {
+      const T = TRACKS[k], i = Math.min(trackIdx(k), T.missions.length);
+      const mark = k === activeTrack() ? '▸' : '·';
+      ctx.print(mark + ' <b>learn ' + k + '</b> <span class="dim">— ' + esc(T.title) + ' · ' + i + '/' + T.missions.length + (i >= T.missions.length ? ' ✓' : '') + '</span>');
+    });
+    if (!want || !TRACKS[want]) {
+      const T = TRACKS[activeTrack()], i = trackIdx(activeTrack()), m = T.missions[i];
+      if (m) ctx.print('<span class="dim">current mission: <b>' + esc(m.text) + '</b> +' + m.xp + ' XP</span>');
+    }
   }
 });
 
@@ -872,7 +914,7 @@ document.addEventListener('keydown', (e) => {
 })();
 
 /* ---------------- init ---------------- */
-const BUILD = 9; // bump with every deploy; the shell checks version.json and warns on stale builds
+const BUILD = 10; // bump with every deploy; the shell checks version.json and warns on stale builds
 setTheme(storeGet('bs_theme') || 'gold');
 setCRT(storeGet('bs_crt') === '1');
 if ('serviceWorker' in navigator) {
@@ -1219,6 +1261,7 @@ function closestCmd(name) {
 const ARG_HINTS = {
   theme: () => Object.keys(THEMES),
   play: () => ['doom'],
+  learn: () => Object.keys(TRACKS),
   dungeon: () => ['daily'],
   explain: () => cmdNames(),
   newgame: () => ['doomlike'],
@@ -1287,8 +1330,9 @@ input.addEventListener('input', updateSuggest);
 
 /* test hook (node only, harmless in browser) */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { newDungeon: newDungeon, mulberry32: mulberry32, seedFrom: seedFrom, sparkline: sparkline, bar: bar, parseArgs: parseArgs, MISSIONS: MISSIONS,
-    levenshtein: levenshtein, closestCmd: closestCmd, cmdNames: cmdNames, ARG_HINTS: ARG_HINTS };
+  module.exports = { newDungeon: newDungeon, mulberry32: mulberry32, seedFrom: seedFrom, sparkline: sparkline, bar: bar, parseArgs: parseArgs,
+    levenshtein: levenshtein, closestCmd: closestCmd, cmdNames: cmdNames, ARG_HINTS: ARG_HINTS,
+    TRACKS: TRACKS, trackIdx: trackIdx, activeTrack: activeTrack };
 }
 
 /* ================= SHIP + BACKUP — portfolio & safety ================= */
